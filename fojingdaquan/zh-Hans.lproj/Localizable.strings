@@ -1,0 +1,36 @@
+/* 
+  Localizable.strings
+  fojingdaquan
+
+  Created by tangmonk on 2020/4/2.
+  Copyright © 2020 tangmonk. All rights reserved.
+*/
+"Highlights" = "标注/笔记";
+"Highlight" = "标注";
+"Contents" = "目录";
+"left" = "还剩";
+"Define" = "定义";
+"Play" = "播放";
+"Pause" = "暂停";
+"Night" = "暗色背景";
+"Style" = "样式";
+"Day" = "亮色背景";
+"Horizontal" = "横向翻页";
+"Vertical" = "竖向翻页";
+"1 page left" = "还剩一页左右";
+"pages left" = "页左右";
+"minutes" = "分钟";
+"1 minute" = "1分钟";
+"Less than a minute" = "少于一分钟";
+"Check out this chapter from" = "";
+"Notes from" = "笔记来自于";
+"All excerpts from" = "";
+"by" = "";
+"Cancel" = "取消";
+"Share" = "分享";
+"Choose existing" = "";
+"Take Photo" = "拍照";
+"Share image quote" = "分享";
+"Share text quote" = "分享";
+"Save" = "保存";
+"Note" = "笔记";

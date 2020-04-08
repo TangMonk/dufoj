@@ -1,0 +1,18 @@
+
+/* Class = "UITabBarItem"; title = "根据册别"; ObjectID = "16E-pV-foS"; */
+"16E-pV-foS.title" = "根据册别";
+
+/* Class = "UITabBarItem"; title = "收藏"; ObjectID = "Ha3-fW-uEp"; */
+"Ha3-fW-uEp.title" = "收藏";
+
+/* Class = "UIViewController"; title = "收藏"; ObjectID = "M7Z-fQ-LF2"; */
+"M7Z-fQ-LF2.title" = "收藏";
+
+/* Class = "UITabBarItem"; title = "根据部类"; ObjectID = "Wx6-cq-QNH"; */
+"Wx6-cq-QNH.title" = "根据部类";
+
+/* Class = "UINavigationItem"; title = "根据部类"; ObjectID = "ahv-lU-DTX"; */
+"ahv-lU-DTX.title" = "根据部类";
+
+/* Class = "UIViewController"; title = "根据册别"; ObjectID = "xZq-QE-kJk"; */
+"xZq-QE-kJk.title" = "根据册别";

@@ -3,27 +3,76 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 50;
+	objectVersion = 51;
 	objects = {
 
 /* Begin PBXBuildFile section */
+		9E8BD6A82EBA4BFF86E2D723 /* Pods_fojingdaquan.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5C3BDB35F096551F0D9376D0 /* Pods_fojingdaquan.framework */; };
+		EB1B74B0243741AF00335713 /* MainTableViewController2.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB1B74AF243741AF00335713 /* MainTableViewController2.swift */; };
 		EB23BA93241E0B8B00800121 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB23BA92241E0B8B00800121 /* AppDelegate.swift */; };
 		EB23BA95241E0B8B00800121 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB23BA94241E0B8B00800121 /* SceneDelegate.swift */; };
-		EB23BA97241E0B8B00800121 /* ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB23BA96241E0B8B00800121 /* ViewController.swift */; };
 		EB23BA9A241E0B8B00800121 /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = EB23BA98241E0B8B00800121 /* Main.storyboard */; };
 		EB23BA9C241E0B8E00800121 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = EB23BA9B241E0B8E00800121 /* Assets.xcassets */; };
 		EB23BA9F241E0B8E00800121 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = EB23BA9D241E0B8E00800121 /* LaunchScreen.storyboard */; };
+		EB26BB9B242A097B0047320F /* utils.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB26BB9A242A097B0047320F /* utils.swift */; };
+		EB3B28E92421C7A400F8DAA0 /* FavoriteViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB3B28E82421C7A400F8DAA0 /* FavoriteViewController.swift */; };
+		EB3B29292421FD1000F8DAA0 /* DatabaseAccessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB3B29282421FD1000F8DAA0 /* DatabaseAccessor.swift */; };
+		EB4AB7FC2425BCEE002DC746 /* Categories.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB4AB7FB2425BCEE002DC746 /* Categories.swift */; };
+		EB4AB7FE2425BCF4002DC746 /* Books.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB4AB7FD2425BCF4002DC746 /* Books.swift */; };
+		EB65E19B243CA61700205F24 /* FavoriteTableViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB65E19A243CA61700205F24 /* FavoriteTableViewController.swift */; };
+		EB65E19D243CABAB00205F24 /* Favorite.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB65E19C243CABAB00205F24 /* Favorite.swift */; };
+		EB76334D2425FC980080324D /* MainTableViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB76334C2425FC980080324D /* MainTableViewController.swift */; };
+		EB76334E242704AC0080324D /* dufoj.sqlite3 in Resources */ = {isa = PBXBuildFile; fileRef = EB4AB7F92425B7B2002DC746 /* dufoj.sqlite3 */; };
+		EB869A8C2435B2170006C9AE /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = EB869A8E2435B2170006C9AE /* Localizable.strings */; };
+		EB943A71242B404900CD4E81 /* cbeta_epub_2019q4.bundle in Resources */ = {isa = PBXBuildFile; fileRef = EB943A70242B404900CD4E81 /* cbeta_epub_2019q4.bundle */; };
+		EBFFA1072420D3C100FC46AE /* RealmData.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBFFA1062420D3C100FC46AE /* RealmData.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		EB3B29202421EAC700F8DAA0 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		2D34C5CB80CB45001B2ED869 /* Pods-fojingdaquan.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-fojingdaquan.debug.xcconfig"; path = "Target Support Files/Pods-fojingdaquan/Pods-fojingdaquan.debug.xcconfig"; sourceTree = "<group>"; };
+		5C3BDB35F096551F0D9376D0 /* Pods_fojingdaquan.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_fojingdaquan.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		D5994211BF456DB293B50D87 /* Pods-fojingdaquan.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-fojingdaquan.release.xcconfig"; path = "Target Support Files/Pods-fojingdaquan/Pods-fojingdaquan.release.xcconfig"; sourceTree = "<group>"; };
+		EB1B74AF243741AF00335713 /* MainTableViewController2.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MainTableViewController2.swift; sourceTree = "<group>"; };
 		EB23BA8F241E0B8B00800121 /* fojingdaquan.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = fojingdaquan.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		EB23BA92241E0B8B00800121 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		EB23BA94241E0B8B00800121 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
-		EB23BA96241E0B8B00800121 /* ViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewController.swift; sourceTree = "<group>"; };
-		EB23BA99241E0B8B00800121 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		EB23BA9B241E0B8E00800121 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		EB23BA9E241E0B8E00800121 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		EB23BAA0241E0B8E00800121 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		EB26BB9A242A097B0047320F /* utils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = utils.swift; sourceTree = "<group>"; };
+		EB3B28E82421C7A400F8DAA0 /* FavoriteViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoriteViewController.swift; sourceTree = "<group>"; };
+		EB3B29282421FD1000F8DAA0 /* DatabaseAccessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatabaseAccessor.swift; sourceTree = "<group>"; };
+		EB4AB7F92425B7B2002DC746 /* dufoj.sqlite3 */ = {isa = PBXFileReference; lastKnownFileType = file; path = dufoj.sqlite3; sourceTree = "<group>"; };
+		EB4AB7FB2425BCEE002DC746 /* Categories.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Categories.swift; sourceTree = "<group>"; };
+		EB4AB7FD2425BCF4002DC746 /* Books.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Books.swift; sourceTree = "<group>"; };
+		EB65E19A243CA61700205F24 /* FavoriteTableViewController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = FavoriteTableViewController.swift; sourceTree = "<group>"; };
+		EB65E19C243CABAB00205F24 /* Favorite.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Favorite.swift; sourceTree = "<group>"; };
+		EB76334C2425FC980080324D /* MainTableViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTableViewController.swift; sourceTree = "<group>"; };
+		EB869A842435B15F0006C9AE /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
+		EB869A852435B1600006C9AE /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
+		EB869A862435B1660006C9AE /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Main.strings"; sourceTree = "<group>"; };
+		EB869A872435B16E0006C9AE /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/LaunchScreen.strings"; sourceTree = "<group>"; };
+		EB869A882435B1D40006C9AE /* zh-HK */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-HK"; path = "zh-HK.lproj/Main.strings"; sourceTree = "<group>"; };
+		EB869A892435B1D60006C9AE /* zh-HK */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-HK"; path = "zh-HK.lproj/LaunchScreen.strings"; sourceTree = "<group>"; };
+		EB869A8D2435B2170006C9AE /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
+		EB869A8F2435B21C0006C9AE /* zh-HK */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-HK"; path = "zh-HK.lproj/Localizable.strings"; sourceTree = "<group>"; };
+		EB943A70242B404900CD4E81 /* cbeta_epub_2019q4.bundle */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.plug-in"; path = cbeta_epub_2019q4.bundle; sourceTree = "<group>"; };
+		EBFFA0D9241F1C8400FC46AE /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		EBFFA0F42420669D00FC46AE /* GBig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GBig.swift; sourceTree = "<group>"; };
+		EBFFA0F624206A1800FC46AE /* realm_create.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = realm_create.swift; sourceTree = "<group>"; };
+		EBFFA1062420D3C100FC46AE /* RealmData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealmData.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -31,17 +80,38 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9E8BD6A82EBA4BFF86E2D723 /* Pods_fojingdaquan.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		7C49B18EA35434FB7F850AFA /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				5C3BDB35F096551F0D9376D0 /* Pods_fojingdaquan.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		AF6295CDBCC7F3E98E3E980B /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				2D34C5CB80CB45001B2ED869 /* Pods-fojingdaquan.debug.xcconfig */,
+				D5994211BF456DB293B50D87 /* Pods-fojingdaquan.release.xcconfig */,
+			);
+			path = Pods;
+			sourceTree = "<group>";
+		};
 		EB23BA86241E0B8B00800121 = {
 			isa = PBXGroup;
 			children = (
 				EB23BA91241E0B8B00800121 /* fojingdaquan */,
+				EBFFA0D8241F1C8400FC46AE /* importBookToRealmData */,
 				EB23BA90241E0B8B00800121 /* Products */,
+				AF6295CDBCC7F3E98E3E980B /* Pods */,
+				7C49B18EA35434FB7F850AFA /* Frameworks */,
 			);
 			sourceTree = "<group>";
 		};
@@ -56,15 +126,53 @@
 		EB23BA91241E0B8B00800121 /* fojingdaquan */ = {
 			isa = PBXGroup;
 			children = (
+				EB869A8E2435B2170006C9AE /* Localizable.strings */,
+				EB943A70242B404900CD4E81 /* cbeta_epub_2019q4.bundle */,
+				EB7633432425DF530080324D /* ViewController */,
+				EB4AB7FA2425BCD8002DC746 /* Models */,
+				EB4AB7F92425B7B2002DC746 /* dufoj.sqlite3 */,
 				EB23BA92241E0B8B00800121 /* AppDelegate.swift */,
+				EB3B29282421FD1000F8DAA0 /* DatabaseAccessor.swift */,
 				EB23BA94241E0B8B00800121 /* SceneDelegate.swift */,
-				EB23BA96241E0B8B00800121 /* ViewController.swift */,
 				EB23BA98241E0B8B00800121 /* Main.storyboard */,
+				EB3B28E82421C7A400F8DAA0 /* FavoriteViewController.swift */,
 				EB23BA9B241E0B8E00800121 /* Assets.xcassets */,
 				EB23BA9D241E0B8E00800121 /* LaunchScreen.storyboard */,
 				EB23BAA0241E0B8E00800121 /* Info.plist */,
+				EBFFA1062420D3C100FC46AE /* RealmData.swift */,
+				EB26BB9A242A097B0047320F /* utils.swift */,
 			);
 			path = fojingdaquan;
+			sourceTree = "<group>";
+		};
+		EB4AB7FA2425BCD8002DC746 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				EB4AB7FB2425BCEE002DC746 /* Categories.swift */,
+				EB4AB7FD2425BCF4002DC746 /* Books.swift */,
+				EB65E19C243CABAB00205F24 /* Favorite.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		EB7633432425DF530080324D /* ViewController */ = {
+			isa = PBXGroup;
+			children = (
+				EB1B74AF243741AF00335713 /* MainTableViewController2.swift */,
+				EB76334C2425FC980080324D /* MainTableViewController.swift */,
+				EB65E19A243CA61700205F24 /* FavoriteTableViewController.swift */,
+			);
+			path = ViewController;
+			sourceTree = "<group>";
+		};
+		EBFFA0D8241F1C8400FC46AE /* importBookToRealmData */ = {
+			isa = PBXGroup;
+			children = (
+				EBFFA0D9241F1C8400FC46AE /* main.swift */,
+				EBFFA0F42420669D00FC46AE /* GBig.swift */,
+				EBFFA0F624206A1800FC46AE /* realm_create.swift */,
+			);
+			path = importBookToRealmData;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -74,9 +182,12 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = EB23BAA3241E0B8E00800121 /* Build configuration list for PBXNativeTarget "fojingdaquan" */;
 			buildPhases = (
+				02AAB83BA44AF78858060E93 /* [CP] Check Pods Manifest.lock */,
 				EB23BA8B241E0B8B00800121 /* Sources */,
 				EB23BA8C241E0B8B00800121 /* Frameworks */,
 				EB23BA8D241E0B8B00800121 /* Resources */,
+				EB3B29202421EAC700F8DAA0 /* Embed Frameworks */,
+				C02B1A26F08DE8B7C31CB0CB /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
@@ -109,6 +220,8 @@
 			knownRegions = (
 				en,
 				Base,
+				"zh-Hans",
+				"zh-HK",
 			);
 			mainGroup = EB23BA86241E0B8B00800121;
 			productRefGroup = EB23BA90241E0B8B00800121 /* Products */;
@@ -125,22 +238,76 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				EB76334E242704AC0080324D /* dufoj.sqlite3 in Resources */,
+				EB869A8C2435B2170006C9AE /* Localizable.strings in Resources */,
 				EB23BA9F241E0B8E00800121 /* LaunchScreen.storyboard in Resources */,
 				EB23BA9C241E0B8E00800121 /* Assets.xcassets in Resources */,
+				EB943A71242B404900CD4E81 /* cbeta_epub_2019q4.bundle in Resources */,
 				EB23BA9A241E0B8B00800121 /* Main.storyboard in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		02AAB83BA44AF78858060E93 /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-fojingdaquan-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+		C02B1A26F08DE8B7C31CB0CB /* [CP] Embed Pods Frameworks */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-fojingdaquan/Pods-fojingdaquan-frameworks-${CONFIGURATION}-input-files.xcfilelist",
+			);
+			name = "[CP] Embed Pods Frameworks";
+			outputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-fojingdaquan/Pods-fojingdaquan-frameworks-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-fojingdaquan/Pods-fojingdaquan-frameworks.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		EB23BA8B241E0B8B00800121 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				EB23BA97241E0B8B00800121 /* ViewController.swift in Sources */,
+				EB26BB9B242A097B0047320F /* utils.swift in Sources */,
 				EB23BA93241E0B8B00800121 /* AppDelegate.swift in Sources */,
+				EBFFA1072420D3C100FC46AE /* RealmData.swift in Sources */,
+				EB1B74B0243741AF00335713 /* MainTableViewController2.swift in Sources */,
+				EB4AB7FE2425BCF4002DC746 /* Books.swift in Sources */,
+				EB65E19B243CA61700205F24 /* FavoriteTableViewController.swift in Sources */,
+				EB3B28E92421C7A400F8DAA0 /* FavoriteViewController.swift in Sources */,
+				EB76334D2425FC980080324D /* MainTableViewController.swift in Sources */,
+				EB3B29292421FD1000F8DAA0 /* DatabaseAccessor.swift in Sources */,
+				EB65E19D243CABAB00205F24 /* Favorite.swift in Sources */,
 				EB23BA95241E0B8B00800121 /* SceneDelegate.swift in Sources */,
+				EB4AB7FC2425BCEE002DC746 /* Categories.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -150,7 +317,9 @@
 		EB23BA98241E0B8B00800121 /* Main.storyboard */ = {
 			isa = PBXVariantGroup;
 			children = (
-				EB23BA99241E0B8B00800121 /* Base */,
+				EB869A842435B15F0006C9AE /* Base */,
+				EB869A862435B1660006C9AE /* zh-Hans */,
+				EB869A882435B1D40006C9AE /* zh-HK */,
 			);
 			name = Main.storyboard;
 			sourceTree = "<group>";
@@ -158,9 +327,20 @@
 		EB23BA9D241E0B8E00800121 /* LaunchScreen.storyboard */ = {
 			isa = PBXVariantGroup;
 			children = (
-				EB23BA9E241E0B8E00800121 /* Base */,
+				EB869A852435B1600006C9AE /* Base */,
+				EB869A872435B16E0006C9AE /* zh-Hans */,
+				EB869A892435B1D60006C9AE /* zh-HK */,
 			);
 			name = LaunchScreen.storyboard;
+			sourceTree = "<group>";
+		};
+		EB869A8E2435B2170006C9AE /* Localizable.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				EB869A8D2435B2170006C9AE /* zh-Hans */,
+				EB869A8F2435B21C0006C9AE /* zh-HK */,
+			);
+			name = Localizable.strings;
 			sourceTree = "<group>";
 		};
 /* End PBXVariantGroup section */
@@ -170,6 +350,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -230,6 +411,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -282,11 +464,17 @@
 		};
 		EB23BAA4241E0B8E00800121 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 2D34C5CB80CB45001B2ED869 /* Pods-fojingdaquan.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = ZV6QFQLQ5K;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Carthage/Build/iOS",
+				);
 				INFOPLIST_FILE = fojingdaquan/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 10.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -300,11 +488,17 @@
 		};
 		EB23BAA5241E0B8E00800121 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = D5994211BF456DB293B50D87 /* Pods-fojingdaquan.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = ZV6QFQLQ5K;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Carthage/Build/iOS",
+				);
 				INFOPLIST_FILE = fojingdaquan/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 10.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
