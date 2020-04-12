@@ -3,6 +3,6 @@ platform :ios, '9.0'
 use_frameworks!
 
 target 'fojingdaquan' do
-  pod 'FolioReaderKit', path: '../FolioReaderKit/'
+    pod 'FolioReaderKit', path: 'https://github.com/TangMonk/FolioReaderKit.git'
     pod 'SQLite.swift', '~> 0.12.0'
 end
