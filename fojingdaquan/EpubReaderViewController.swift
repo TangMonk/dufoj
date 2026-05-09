@@ -215,18 +215,26 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
     private func readerCSS() -> String {
         let percent = Int(fontScale * 100)
         return """
-        html { -webkit-text-size-adjust: \(percent)% !important; }
+        html {
+          -webkit-text-size-adjust: \(percent)% !important;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
         body {
           box-sizing: border-box !important;
-          max-width: 760px !important;
+          max-width: none !important;
           margin: 0 auto !important;
-          padding: 18px 18px 34px !important;
+          padding: 12px 10px 30px !important;
           color: #1f2328 !important;
           background: #fffdf8 !important;
           line-height: 1.9 !important;
           font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif !important;
         }
-        p, div, li { line-height: 1.9 !important; }
+        p, div, li, section, article {
+          line-height: 1.9 !important;
+          margin-left: 0 !important;
+          margin-right: 0 !important;
+        }
         img, svg { max-width: 100% !important; height: auto !important; }
         a { color: #0a84ff !important; }
         """
