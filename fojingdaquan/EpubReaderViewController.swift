@@ -274,14 +274,17 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
           function normalizePoemText(text) {
             return (text || '')
               .replace(/，[\\s\\u3000]*/g, '，\\n')
+              .replace(/[\\s\\u3000]+/g, '\\n')
               .split('\\n')
               .map(function(line) {
                 return line
                   .replace(/^[\\s\\u3000]+/g, '')
                   .replace(/[\\s\\u3000]+$/g, '');
               })
-              .join('\\n')
-              .replace(/[\\n]+$/g, '');
+              .filter(function(line) {
+                return line.length > 0;
+              })
+              .join('\\n');
           }
 
           function formatPoem(block) {
