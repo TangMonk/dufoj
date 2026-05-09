@@ -224,7 +224,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
           box-sizing: border-box !important;
           max-width: none !important;
           margin: 0 auto !important;
-          padding: 14px 24px 30px !important;
+          padding: 14px 44px 30px !important;
           color: #1f2328 !important;
           background: #fffdf8 !important;
           line-height: 1.9 !important;
