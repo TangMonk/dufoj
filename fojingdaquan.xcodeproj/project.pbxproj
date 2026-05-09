@@ -15,6 +15,7 @@
 		EB23BA9C241E0B8E00800121 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = EB23BA9B241E0B8E00800121 /* Assets.xcassets */; };
 		EB23BA9F241E0B8E00800121 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = EB23BA9D241E0B8E00800121 /* LaunchScreen.storyboard */; };
 		EB26BB9B242A097B0047320F /* utils.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB26BB9A242A097B0047320F /* utils.swift */; };
+		EB3000012EBA000100000001 /* EpubReaderViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB3000002EBA000100000001 /* EpubReaderViewController.swift */; };
 		EB3B28E92421C7A400F8DAA0 /* FavoriteViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB3B28E82421C7A400F8DAA0 /* FavoriteViewController.swift */; };
 		EB3B29292421FD1000F8DAA0 /* DatabaseAccessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB3B29282421FD1000F8DAA0 /* DatabaseAccessor.swift */; };
 		EB4AB7FC2425BCEE002DC746 /* Categories.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB4AB7FB2425BCEE002DC746 /* Categories.swift */; };
@@ -52,6 +53,7 @@
 		EB23BA9B241E0B8E00800121 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		EB23BAA0241E0B8E00800121 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		EB26BB9A242A097B0047320F /* utils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = utils.swift; sourceTree = "<group>"; };
+		EB3000002EBA000100000001 /* EpubReaderViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EpubReaderViewController.swift; sourceTree = "<group>"; };
 		EB3B28E82421C7A400F8DAA0 /* FavoriteViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoriteViewController.swift; sourceTree = "<group>"; };
 		EB3B29282421FD1000F8DAA0 /* DatabaseAccessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatabaseAccessor.swift; sourceTree = "<group>"; };
 		EB4AB7F92425B7B2002DC746 /* dufoj.sqlite3 */ = {isa = PBXFileReference; lastKnownFileType = file; path = dufoj.sqlite3; sourceTree = "<group>"; };
@@ -141,6 +143,7 @@
 				EB23BAA0241E0B8E00800121 /* Info.plist */,
 				EBFFA1062420D3C100FC46AE /* RealmData.swift */,
 				EB26BB9A242A097B0047320F /* utils.swift */,
+				EB3000002EBA000100000001 /* EpubReaderViewController.swift */,
 			);
 			path = fojingdaquan;
 			sourceTree = "<group>";
@@ -302,6 +305,7 @@
 				EB1B74B0243741AF00335713 /* MainTableViewController2.swift in Sources */,
 				EB4AB7FE2425BCF4002DC746 /* Books.swift in Sources */,
 				EB65E19B243CA61700205F24 /* FavoriteTableViewController.swift in Sources */,
+				EB3000012EBA000100000001 /* EpubReaderViewController.swift in Sources */,
 				EB3B28E92421C7A400F8DAA0 /* FavoriteViewController.swift in Sources */,
 				EB76334D2425FC980080324D /* MainTableViewController.swift in Sources */,
 				EB3B29292421FD1000F8DAA0 /* DatabaseAccessor.swift in Sources */,
@@ -474,7 +478,7 @@
 					"$(PROJECT_DIR)/Carthage/Build/iOS",
 				);
 				INFOPLIST_FILE = fojingdaquan/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 10.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 12.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -498,7 +502,7 @@
 					"$(PROJECT_DIR)/Carthage/Build/iOS",
 				);
 				INFOPLIST_FILE = fojingdaquan/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 10.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 12.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

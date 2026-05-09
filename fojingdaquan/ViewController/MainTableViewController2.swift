@@ -8,7 +8,6 @@
 
 import UIKit
 import os.log
-import FolioReaderKit
 
 class MainTableViewController2: UITableViewController, UISearchResultsUpdating {
     var parentId: Int64? = nil
@@ -127,25 +126,7 @@ class MainTableViewController2: UITableViewController, UISearchResultsUpdating {
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         let item = items[indexPath.row]
         if let book = item as? Books {
-
-            guard let bookPath = Bundle.main.path(forResource: "cbeta_epub_2019q4.bundle/\(book.location)", ofType: "epub") else { return }
-
-            let folioReader = FolioReader()
-            let config = FolioReaderConfig()
-            config.shouldHideNavigationOnTap = true
-            
-            config.canChangeScrollDirection = true
-            config.enableTTS = false
-            config.displayTitle = true
-            config.allowSharing = true
-            config.tintColor = hexStringToUIColor(hex: "#0a84ff")
-            config.hideBars = false
-            config.canChangeFontStyle = false
-            
-            config.menuTextColor = UIColor.brown
-            config.hidePageIndicator = true
-            
-            folioReader.presentReader(parentViewController: self, withEpubPath: bookPath, andConfig: config)
+            openEpubReader(book: book)
 
         }else if let category = item as? Categories {
             let storyboard = UIStoryboard(name: "Main", bundle: nil)

@@ -1,8 +1,15 @@
-source 'https://github.com/CocoaPods/Specs.git'
-platform :ios, '9.0'
+platform :ios, '12.0'
 use_frameworks!
 
 target 'fojingdaquan' do
-    pod 'FolioReaderKit', path: 'https://github.com/TangMonk/FolioReaderKit.git'
     pod 'SQLite.swift', '~> 0.12.0'
+    pod 'SSZipArchive', '2.1.1'
+end
+
+post_install do |installer|
+    installer.pods_project.targets.each do |target|
+        target.build_configurations.each do |config|
+            config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '12.0'
+        end
+    end
 end
