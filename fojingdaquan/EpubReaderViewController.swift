@@ -46,8 +46,8 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
     private let suggestedTitle: String
 
     private var webView: WKWebView!
-    private let toolbar = UIToolbar()
-    private let progressItem = UIBarButtonItem(title: "", style: .plain, target: nil, action: nil)
+    private let bottomToolbar = UIView()
+    private let progressLabel = UILabel()
     private let loadingView = UIActivityIndicatorView(style: .gray)
 
     private var book: EpubBook?
@@ -101,19 +101,29 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
     }
 
     private func setupToolbar() {
-        toolbar.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(toolbar)
+        bottomToolbar.backgroundColor = UIColor(white: 0.98, alpha: 0.96)
+        bottomToolbar.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(bottomToolbar)
 
-        let smaller = UIBarButtonItem(title: "A-", style: .plain, target: self, action: #selector(decreaseFontSize))
-        let previous = UIBarButtonItem(title: "上一章", style: .plain, target: self, action: #selector(showPreviousChapter))
-        let next = UIBarButtonItem(title: "下一章", style: .plain, target: self, action: #selector(showNextChapter))
-        let larger = UIBarButtonItem(title: "A+", style: .plain, target: self, action: #selector(increaseFontSize))
-        let fixed = UIBarButtonItem(barButtonSystemItem: .fixedSpace, target: nil, action: nil)
-        fixed.width = 12
-        let flexible = UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil)
+        let stackView = UIStackView(arrangedSubviews: [
+            makeToolbarButton(title: "A-", action: #selector(decreaseFontSize)),
+            makeToolbarButton(title: "上一章", action: #selector(showPreviousChapter)),
+            progressLabel,
+            makeToolbarButton(title: "下一章", action: #selector(showNextChapter)),
+            makeToolbarButton(title: "A+", action: #selector(increaseFontSize))
+        ])
+        stackView.axis = .horizontal
+        stackView.alignment = .fill
+        stackView.distribution = .fillEqually
+        stackView.spacing = 6
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        bottomToolbar.addSubview(stackView)
 
-        progressItem.isEnabled = false
-        toolbar.items = [smaller, fixed, previous, flexible, progressItem, flexible, next, fixed, larger]
+        progressLabel.textAlignment = .center
+        progressLabel.textColor = UIColor.lightGray
+        progressLabel.font = UIFont.systemFont(ofSize: 17, weight: .semibold)
+        progressLabel.adjustsFontSizeToFitWidth = true
+        progressLabel.minimumScaleFactor = 0.7
 
         navigationItem.rightBarButtonItem = UIBarButtonItem(title: "目录", style: .plain, target: self, action: #selector(showContents))
 
@@ -121,12 +131,34 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
             webView.topAnchor.constraint(equalTo: topLayoutGuide.bottomAnchor),
             webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            webView.bottomAnchor.constraint(equalTo: toolbar.topAnchor),
+            webView.bottomAnchor.constraint(equalTo: bottomToolbar.topAnchor),
 
-            toolbar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            toolbar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            toolbar.bottomAnchor.constraint(equalTo: bottomLayoutGuide.topAnchor)
+            bottomToolbar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            bottomToolbar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            bottomToolbar.bottomAnchor.constraint(equalTo: bottomLayoutGuide.topAnchor),
+            bottomToolbar.heightAnchor.constraint(equalToConstant: 58),
+
+            stackView.topAnchor.constraint(equalTo: bottomToolbar.topAnchor, constant: 8),
+            stackView.leadingAnchor.constraint(equalTo: bottomToolbar.leadingAnchor, constant: 10),
+            stackView.trailingAnchor.constraint(equalTo: bottomToolbar.trailingAnchor, constant: -10),
+            stackView.bottomAnchor.constraint(equalTo: bottomToolbar.bottomAnchor, constant: -8)
         ])
+    }
+
+    private func makeToolbarButton(title: String, action: Selector) -> UIButton {
+        let button = UIButton(type: .system)
+        button.setTitle(title, for: .normal)
+        button.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
+        button.titleLabel?.adjustsFontSizeToFitWidth = true
+        button.titleLabel?.minimumScaleFactor = 0.7
+        button.titleLabel?.lineBreakMode = .byClipping
+        button.contentEdgeInsets = UIEdgeInsets(top: 0, left: 2, bottom: 0, right: 2)
+        button.backgroundColor = UIColor(white: 1.0, alpha: 0.92)
+        button.layer.cornerRadius = 8
+        button.layer.borderWidth = 0.5
+        button.layer.borderColor = UIColor(white: 0.88, alpha: 1).cgColor
+        button.addTarget(self, action: action, for: .touchUpInside)
+        return button
     }
 
     private func setupLoadingView() {
@@ -173,7 +205,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
         }
 
         let chapter = book.chapters[currentChapterIndex]
-        progressItem.title = "\(currentChapterIndex + 1)/\(book.chapters.count)"
+        progressLabel.text = "\(currentChapterIndex + 1)/\(book.chapters.count)"
         pendingScrollY = scrollY
         webView.loadFileURL(chapter.url, allowingReadAccessTo: book.rootURL)
     }
