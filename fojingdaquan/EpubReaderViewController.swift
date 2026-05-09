@@ -23,6 +23,11 @@ private struct EpubBook {
     let chapters: [EpubChapter]
 }
 
+private struct EpubReadingPosition {
+    let chapterIndex: Int
+    let scrollY: Double
+}
+
 private enum EpubReaderError: Error {
     case unzipFailed
     case missingContainer
@@ -42,6 +47,10 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
     private var book: EpubBook?
     private var currentChapterIndex = 0
     private var fontScale: CGFloat = 1.0
+    private var pendingScrollY: Double?
+    private var readingPositionKey: String {
+        return "dufoj.epubReader.position.\(epubURL.path)"
+    }
 
     init(epubURL: URL, title: String) {
         self.epubURL = epubURL
@@ -62,7 +71,17 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
         setupWebView()
         setupToolbar()
         setupLoadingView()
+        observeReadingPositionEvents()
         loadEpub()
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        saveCurrentPosition()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     private func setupWebView() {
@@ -131,8 +150,9 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
                 case .success(let book):
                     self.book = book
                     self.title = book.title
-                    self.currentChapterIndex = 0
-                    self.loadCurrentChapter()
+                    let position = self.savedReadingPosition(chapterCount: book.chapters.count)
+                    self.currentChapterIndex = position?.chapterIndex ?? 0
+                    self.loadCurrentChapter(scrollY: position?.scrollY)
                 case .failure:
                     ShowMessage(controller: self, msg: "无法打开这本 EPUB", title: "错误")
                 }
@@ -140,13 +160,14 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
         }
     }
 
-    private func loadCurrentChapter() {
+    private func loadCurrentChapter(scrollY: Double? = 0) {
         guard let book = book, book.chapters.indices.contains(currentChapterIndex) else {
             return
         }
 
         let chapter = book.chapters[currentChapterIndex]
         progressItem.title = "\(currentChapterIndex + 1)/\(book.chapters.count)"
+        pendingScrollY = scrollY
         webView.loadFileURL(chapter.url, allowingReadAccessTo: book.rootURL)
     }
 
@@ -188,14 +209,16 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
 
     @objc private func showPreviousChapter() {
         guard currentChapterIndex > 0 else { return }
+        saveCurrentPosition()
         currentChapterIndex -= 1
-        loadCurrentChapter()
+        loadCurrentChapter(scrollY: 0)
     }
 
     @objc private func showNextChapter() {
         guard let book = book, currentChapterIndex < book.chapters.count - 1 else { return }
+        saveCurrentPosition()
         currentChapterIndex += 1
-        loadCurrentChapter()
+        loadCurrentChapter(scrollY: 0)
     }
 
     @objc private func decreaseFontSize() {
@@ -212,8 +235,9 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
         guard let book = book else { return }
 
         let contents = EpubContentsViewController(chapters: book.chapters, currentIndex: currentChapterIndex) { [weak self] index in
+            self?.saveCurrentPosition()
             self?.currentChapterIndex = index
-            self?.loadCurrentChapter()
+            self?.loadCurrentChapter(scrollY: 0)
         }
         let navigationController = UINavigationController(rootViewController: contents)
         present(navigationController, animated: true, completion: nil)
@@ -221,6 +245,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         applyReaderStyle()
+        restorePendingScrollPosition()
     }
 
     func webView(_ webView: WKWebView,
@@ -233,8 +258,9 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
             return
         }
 
+        saveCurrentPosition()
         currentChapterIndex = index
-        loadCurrentChapter()
+        loadCurrentChapter(scrollY: 0)
         decisionHandler(.cancel)
     }
 
@@ -248,6 +274,83 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
         var components = URLComponents(url: url, resolvingAgainstBaseURL: true)
         components?.fragment = nil
         return (components?.url ?? url).standardizedFileURL
+    }
+
+    private func observeReadingPositionEvents() {
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(saveCurrentPositionForNotification),
+                                               name: UIApplication.willResignActiveNotification,
+                                               object: nil)
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(saveCurrentPositionForNotification),
+                                               name: UIApplication.didEnterBackgroundNotification,
+                                               object: nil)
+    }
+
+    @objc private func saveCurrentPositionForNotification() {
+        saveCurrentPosition()
+    }
+
+    private func savedReadingPosition(chapterCount: Int) -> EpubReadingPosition? {
+        guard let dictionary = UserDefaults.standard.dictionary(forKey: readingPositionKey),
+              let chapterIndex = dictionary["chapterIndex"] as? Int,
+              chapterIndex >= 0,
+              chapterIndex < chapterCount else {
+            return nil
+        }
+
+        return EpubReadingPosition(chapterIndex: chapterIndex,
+                                   scrollY: doubleValue(from: dictionary["scrollY"]))
+    }
+
+    private func saveCurrentPosition() {
+        guard book != nil, webView != nil else {
+            return
+        }
+
+        let chapterIndex = currentChapterIndex
+        let script = "Math.max(window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0, 0);"
+        webView.evaluateJavaScript(script) { [weak self] result, _ in
+            guard let self = self else { return }
+            self.persistReadingPosition(chapterIndex: chapterIndex, scrollY: self.doubleValue(from: result))
+        }
+    }
+
+    private func persistReadingPosition(chapterIndex: Int? = nil, scrollY: Double) {
+        let index = chapterIndex ?? currentChapterIndex
+        guard let book = book, book.chapters.indices.contains(index) else {
+            return
+        }
+
+        UserDefaults.standard.set([
+            "chapterIndex": index,
+            "scrollY": max(0, scrollY)
+        ], forKey: readingPositionKey)
+    }
+
+    private func restorePendingScrollPosition() {
+        guard let scrollY = pendingScrollY else {
+            persistReadingPosition(scrollY: 0)
+            return
+        }
+
+        pendingScrollY = nil
+        let roundedScrollY = max(0, scrollY)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            guard let self = self else { return }
+            self.webView.evaluateJavaScript("window.scrollTo(0, \(roundedScrollY));", completionHandler: nil)
+            self.persistReadingPosition(scrollY: roundedScrollY)
+        }
+    }
+
+    private func doubleValue(from value: Any?) -> Double {
+        if let number = value as? NSNumber {
+            return number.doubleValue
+        }
+        if let value = value as? Double {
+            return value
+        }
+        return 0
     }
 }
 
