@@ -93,6 +93,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
     private func setupWebView() {
         let configuration = WKWebViewConfiguration()
         webView = WKWebView(frame: .zero, configuration: configuration)
+        installReaderStyleUserScript()
         webView.navigationDelegate = self
         webView.backgroundColor = UIColor.white
         webView.isOpaque = false
@@ -207,12 +208,13 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
         let chapter = book.chapters[currentChapterIndex]
         progressLabel.text = "\(currentChapterIndex + 1)/\(book.chapters.count)"
         pendingScrollY = scrollY
+        installReaderStyleUserScript()
         webView.loadFileURL(chapter.url, allowingReadAccessTo: book.rootURL)
     }
 
-    private func applyReaderStyle() {
+    private func readerCSS() -> String {
         let percent = Int(fontScale * 100)
-        let css = """
+        return """
         html { -webkit-text-size-adjust: \(percent)% !important; }
         body {
           box-sizing: border-box !important;
@@ -228,22 +230,39 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
         img, svg { max-width: 100% !important; height: auto !important; }
         a { color: #0a84ff !important; }
         """
-        let escapedCSS = css
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "'", with: "\\'")
-            .replacingOccurrences(of: "\n", with: " ")
-        let script = """
+    }
+
+    private func readerStyleScript() -> String {
+        let css = readerCSS()
+        let cssData = try? JSONSerialization.data(withJSONObject: [css], options: [])
+        let cssLiteral = cssData
+            .flatMap { String(data: $0, encoding: .utf8) }?
+            .map { String($0.dropFirst().dropLast()) } ?? "\"\""
+
+        return """
         (function() {
+          var css = \(cssLiteral);
           var style = document.getElementById('dufoj-reader-style');
           if (!style) {
             style = document.createElement('style');
             style.id = 'dufoj-reader-style';
-            document.head.appendChild(style);
+            (document.head || document.documentElement).appendChild(style);
           }
-          style.innerHTML = '\(escapedCSS)';
+          style.textContent = css;
         })();
         """
-        webView.evaluateJavaScript(script, completionHandler: nil)
+    }
+
+    private func installReaderStyleUserScript() {
+        let controller = webView.configuration.userContentController
+        controller.removeAllUserScripts()
+        controller.addUserScript(WKUserScript(source: readerStyleScript(),
+                                              injectionTime: .atDocumentStart,
+                                              forMainFrameOnly: true))
+    }
+
+    private func applyReaderStyleToCurrentDocument() {
+        webView.evaluateJavaScript(readerStyleScript(), completionHandler: nil)
     }
 
     @objc private func showPreviousChapter() {
@@ -263,14 +282,16 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
     @objc private func decreaseFontSize() {
         fontScale = max(EpubReaderViewController.minimumFontScale,
                         fontScale - EpubReaderViewController.fontScaleStep)
-        applyReaderStyle()
+        installReaderStyleUserScript()
+        applyReaderStyleToCurrentDocument()
         saveCurrentPosition()
     }
 
     @objc private func increaseFontSize() {
         fontScale = min(EpubReaderViewController.maximumFontScale,
                         fontScale + EpubReaderViewController.fontScaleStep)
-        applyReaderStyle()
+        installReaderStyleUserScript()
+        applyReaderStyleToCurrentDocument()
         saveCurrentPosition()
     }
 
@@ -287,7 +308,6 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        applyReaderStyle()
         restorePendingScrollPosition()
     }
 
