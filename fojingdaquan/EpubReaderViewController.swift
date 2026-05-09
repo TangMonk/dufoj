@@ -37,6 +37,11 @@ private enum EpubReaderError: Error {
 }
 
 final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
+    private static let defaultFontScale: CGFloat = 3.0
+    private static let fontScaleStep: CGFloat = 0.5
+    private static let minimumFontScale: CGFloat = 0.5
+    private static let maximumFontScale: CGFloat = 6.0
+
     private let epubURL: URL
     private let suggestedTitle: String
 
@@ -47,7 +52,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
 
     private var book: EpubBook?
     private var currentChapterIndex = 0
-    private var fontScale: CGFloat = 1.0
+    private var fontScale: CGFloat = EpubReaderViewController.defaultFontScale
     private var pendingScrollY: Double?
     private var readingPositionKey: String {
         return "dufoj.epubReader.position.\(epubURL.path)"
@@ -152,7 +157,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
                     self.book = book
                     self.title = book.title
                     let position = self.savedReadingPosition(chapterCount: book.chapters.count)
-                    self.fontScale = position?.fontScale ?? 1.0
+                    self.fontScale = position?.fontScale ?? EpubReaderViewController.defaultFontScale
                     self.currentChapterIndex = position?.chapterIndex ?? 0
                     self.loadCurrentChapter(scrollY: position?.scrollY)
                 case .failure:
@@ -224,13 +229,15 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
     }
 
     @objc private func decreaseFontSize() {
-        fontScale = max(0.75, fontScale - 0.1)
+        fontScale = max(EpubReaderViewController.minimumFontScale,
+                        fontScale - EpubReaderViewController.fontScaleStep)
         applyReaderStyle()
         saveCurrentPosition()
     }
 
     @objc private func increaseFontSize() {
-        fontScale = min(1.8, fontScale + 0.1)
+        fontScale = min(EpubReaderViewController.maximumFontScale,
+                        fontScale + EpubReaderViewController.fontScaleStep)
         applyReaderStyle()
         saveCurrentPosition()
     }
@@ -305,7 +312,8 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
 
         return EpubReadingPosition(chapterIndex: chapterIndex,
                                    scrollY: doubleValue(from: dictionary["scrollY"]),
-                                   fontScale: CGFloat(clampedFontScale(doubleValue(from: dictionary["fontScale"], defaultValue: 1.0))))
+                                   fontScale: CGFloat(clampedFontScale(doubleValue(from: dictionary["fontScale"],
+                                                                                  defaultValue: Double(EpubReaderViewController.defaultFontScale)))))
     }
 
     private func saveCurrentPosition() {
@@ -360,7 +368,8 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
     }
 
     private func clampedFontScale(_ value: Double) -> Double {
-        return min(1.8, max(0.75, value))
+        return min(Double(EpubReaderViewController.maximumFontScale),
+                   max(Double(EpubReaderViewController.minimumFontScale), value))
     }
 }
 
