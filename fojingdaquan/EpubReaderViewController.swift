@@ -26,6 +26,7 @@ private struct EpubBook {
 private struct EpubReadingPosition {
     let chapterIndex: Int
     let scrollY: Double
+    let fontScale: CGFloat
 }
 
 private enum EpubReaderError: Error {
@@ -151,6 +152,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
                     self.book = book
                     self.title = book.title
                     let position = self.savedReadingPosition(chapterCount: book.chapters.count)
+                    self.fontScale = position?.fontScale ?? 1.0
                     self.currentChapterIndex = position?.chapterIndex ?? 0
                     self.loadCurrentChapter(scrollY: position?.scrollY)
                 case .failure:
@@ -224,11 +226,13 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
     @objc private func decreaseFontSize() {
         fontScale = max(0.75, fontScale - 0.1)
         applyReaderStyle()
+        saveCurrentPosition()
     }
 
     @objc private func increaseFontSize() {
         fontScale = min(1.8, fontScale + 0.1)
         applyReaderStyle()
+        saveCurrentPosition()
     }
 
     @objc private func showContents() {
@@ -300,7 +304,8 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
         }
 
         return EpubReadingPosition(chapterIndex: chapterIndex,
-                                   scrollY: doubleValue(from: dictionary["scrollY"]))
+                                   scrollY: doubleValue(from: dictionary["scrollY"]),
+                                   fontScale: CGFloat(clampedFontScale(doubleValue(from: dictionary["fontScale"], defaultValue: 1.0))))
     }
 
     private func saveCurrentPosition() {
@@ -324,7 +329,8 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
 
         UserDefaults.standard.set([
             "chapterIndex": index,
-            "scrollY": max(0, scrollY)
+            "scrollY": max(0, scrollY),
+            "fontScale": Double(fontScale)
         ], forKey: readingPositionKey)
     }
 
@@ -343,14 +349,18 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
         }
     }
 
-    private func doubleValue(from value: Any?) -> Double {
+    private func doubleValue(from value: Any?, defaultValue: Double = 0) -> Double {
         if let number = value as? NSNumber {
             return number.doubleValue
         }
         if let value = value as? Double {
             return value
         }
-        return 0
+        return defaultValue
+    }
+
+    private func clampedFontScale(_ value: Double) -> Double {
+        return min(1.8, max(0.75, value))
     }
 }
 
