@@ -235,6 +235,13 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
           margin-left: 0 !important;
           margin-right: 0 !important;
         }
+        div.lg {
+          visibility: hidden !important;
+          white-space: pre-line !important;
+        }
+        div.lg.dufoj-lg-ready {
+          visibility: visible !important;
+        }
         img, svg { max-width: 100% !important; height: auto !important; }
         a { color: #0a84ff !important; }
         """
@@ -261,16 +268,59 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
         """
     }
 
+    private func readerPoemScript() -> String {
+        return """
+        (function() {
+          function normalizePoemText(text) {
+            return (text || '')
+              .replace(/，[\\s\\u3000]*/g, '，\\n')
+              .split('\\n')
+              .map(function(line) {
+                return line
+                  .replace(/^[\\s\\u3000]+/g, '')
+                  .replace(/[\\s\\u3000]+$/g, '');
+              })
+              .join('\\n')
+              .replace(/[\\n]+$/g, '');
+          }
+
+          function formatPoem(block) {
+            if (block.getAttribute('data-dufoj-lg-formatted') !== '1') {
+              block.textContent = normalizePoemText(block.textContent);
+              block.setAttribute('data-dufoj-lg-formatted', '1');
+            }
+            block.classList.add('dufoj-lg-ready');
+          }
+
+          function formatPoems(root) {
+            Array.prototype.forEach.call((root || document).querySelectorAll('div.lg'), formatPoem);
+          }
+
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function() {
+              formatPoems(document);
+            });
+          } else {
+            formatPoems(document);
+          }
+        })();
+        """
+    }
+
     private func installReaderStyleUserScript() {
         let controller = webView.configuration.userContentController
         controller.removeAllUserScripts()
         controller.addUserScript(WKUserScript(source: readerStyleScript(),
                                               injectionTime: .atDocumentStart,
                                               forMainFrameOnly: true))
+        controller.addUserScript(WKUserScript(source: readerPoemScript(),
+                                              injectionTime: .atDocumentEnd,
+                                              forMainFrameOnly: true))
     }
 
     private func applyReaderStyleToCurrentDocument() {
         webView.evaluateJavaScript(readerStyleScript(), completionHandler: nil)
+        webView.evaluateJavaScript(readerPoemScript(), completionHandler: nil)
     }
 
     @objc private func showPreviousChapter() {
