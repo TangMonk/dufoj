@@ -17,10 +17,18 @@ private struct EpubChapter {
     let url: URL
 }
 
+private struct EpubTocItem {
+    let title: String
+    let url: URL?
+    let chapterIndex: Int?
+    let children: [EpubTocItem]
+}
+
 private struct EpubBook {
     let title: String
     let rootURL: URL
     let chapters: [EpubChapter]
+    let tocItems: [EpubTocItem]
 }
 
 private struct EpubReadingPosition {
@@ -223,7 +231,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
         }
     }
 
-    private func loadCurrentChapter(scrollY: Double? = 0) {
+    private func loadCurrentChapter(scrollY: Double? = 0, targetURL: URL? = nil) {
         guard let book = book, book.chapters.indices.contains(currentChapterIndex) else {
             return
         }
@@ -232,7 +240,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
         progressLabel.text = "\(currentChapterIndex + 1)/\(book.chapters.count)"
         pendingScrollY = scrollY
         installReaderStyleUserScript()
-        webView.loadFileURL(chapter.url, allowingReadAccessTo: book.rootURL)
+        webView.loadFileURL(targetURL ?? chapter.url, allowingReadAccessTo: book.rootURL)
     }
 
     private var isDarkModeEnabled: Bool {
@@ -405,10 +413,10 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
     @objc private func showContents() {
         guard let book = book else { return }
 
-        let contents = EpubContentsViewController(chapters: book.chapters, currentIndex: currentChapterIndex) { [weak self] index in
+        let contents = EpubContentsViewController(items: book.tocItems, currentIndex: currentChapterIndex) { [weak self] item in
             self?.saveCurrentPosition()
-            self?.currentChapterIndex = index
-            self?.loadCurrentChapter(scrollY: 0)
+            self?.currentChapterIndex = item.chapterIndex ?? 0
+            self?.loadCurrentChapter(scrollY: item.url?.fragment == nil ? 0 : nil, targetURL: item.url)
         }
         let navigationController = UINavigationController(rootViewController: contents)
         present(navigationController, animated: true, completion: nil)
@@ -533,12 +541,17 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
 }
 
 private final class EpubContentsViewController: UITableViewController {
-    private let chapters: [EpubChapter]
-    private let currentIndex: Int
-    private let onSelect: (Int) -> Void
+    private struct Row {
+        let item: EpubTocItem
+        let level: Int
+    }
 
-    init(chapters: [EpubChapter], currentIndex: Int, onSelect: @escaping (Int) -> Void) {
-        self.chapters = chapters
+    private let rows: [Row]
+    private let currentIndex: Int
+    private let onSelect: (EpubTocItem) -> Void
+
+    init(items: [EpubTocItem], currentIndex: Int, onSelect: @escaping (EpubTocItem) -> Void) {
+        self.rows = EpubContentsViewController.flatten(items: items)
         self.currentIndex = currentIndex
         self.onSelect = onSelect
         super.init(style: .plain)
@@ -567,21 +580,34 @@ private final class EpubContentsViewController: UITableViewController {
     }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return chapters.count
+        return rows.count
     }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "chapterCell", for: indexPath)
-        cell.textLabel?.text = chapters[indexPath.row].title
+        let row = rows[indexPath.row]
+        let isSelectable = row.item.chapterIndex != nil
+        cell.textLabel?.text = row.item.title
         cell.textLabel?.numberOfLines = 2
-        cell.textLabel?.textColor = isDarkModeEnabled ? UIColor(red: 0.82, green: 0.82, blue: 0.82, alpha: 1) : UIColor(red: 0.12, green: 0.14, blue: 0.16, alpha: 1)
+        cell.textLabel?.font = UIFont.systemFont(ofSize: row.level == 0 ? 17 : 16,
+                                                 weight: row.item.children.isEmpty ? .regular : .semibold)
+        cell.textLabel?.textColor = textColor(isSelectable: isSelectable)
         cell.backgroundColor = isDarkModeEnabled ? UIColor(red: 0.13, green: 0.13, blue: 0.14, alpha: 1) : UIColor(red: 0.98, green: 0.96, blue: 0.90, alpha: 1)
-        cell.accessoryType = indexPath.row == currentIndex ? .checkmark : .none
+        cell.indentationLevel = row.level
+        cell.indentationWidth = 18
+        cell.selectionStyle = isSelectable ? .default : .none
+        cell.accessoryType = row.item.chapterIndex == currentIndex ? .checkmark : .none
         return cell
     }
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        onSelect(indexPath.row)
+        tableView.deselectRow(at: indexPath, animated: true)
+        let item = rows[indexPath.row].item
+        guard item.chapterIndex != nil else {
+            return
+        }
+
+        onSelect(item)
         dismiss(animated: true, completion: nil)
     }
 
@@ -594,11 +620,24 @@ private final class EpubContentsViewController: UITableViewController {
         navigationController?.navigationBar.barStyle = isDarkModeEnabled ? .black : .default
     }
 
+    private func textColor(isSelectable: Bool) -> UIColor {
+        if isDarkModeEnabled {
+            return isSelectable ? UIColor(red: 0.82, green: 0.82, blue: 0.82, alpha: 1) : UIColor(red: 0.50, green: 0.50, blue: 0.52, alpha: 1)
+        }
+        return isSelectable ? UIColor(red: 0.12, green: 0.14, blue: 0.16, alpha: 1) : UIColor(white: 0.50, alpha: 1)
+    }
+
     private var isDarkModeEnabled: Bool {
         if #available(iOS 13.0, *) {
             return traitCollection.userInterfaceStyle == .dark
         }
         return false
+    }
+
+    private static func flatten(items: [EpubTocItem], level: Int = 0) -> [Row] {
+        return items.flatMap { item -> [Row] in
+            return [Row(item: item, level: level)] + flatten(items: item.children, level: level + 1)
+        }
     }
 }
 
@@ -630,7 +669,8 @@ private final class EpubParser {
         let packageURL = destinationURL.appendingPathComponent(packagePath)
         let package = try parsePackage(packageURL, suggestedTitle: suggestedTitle)
         let baseURL = packageURL.deletingLastPathComponent()
-        let tocTitles = parseTocTitles(package: package, baseURL: baseURL)
+        let parsedTocItems = parseTocItems(package: package, baseURL: baseURL)
+        let tocTitles = titlesByHref(from: parsedTocItems)
 
         let chapters = package.spine.compactMap { idref -> EpubChapter? in
             guard !isSkippedChapterID(idref) else {
@@ -652,7 +692,10 @@ private final class EpubParser {
             throw EpubReaderError.missingChapters
         }
 
-        return EpubBook(title: package.title, rootURL: destinationURL, chapters: chapters)
+        let tocItems = resolveTocItems(parsedTocItems, baseURL: baseURL, chapters: chapters)
+        let finalTocItems = tocItems.isEmpty ? fallbackTocItems(chapters: chapters) : tocItems
+
+        return EpubBook(title: package.title, rootURL: destinationURL, chapters: chapters, tocItems: finalTocItems)
     }
 
     private static func isSkippedChapterID(_ idref: String) -> Bool {
@@ -698,20 +741,78 @@ private final class EpubParser {
         throw EpubReaderError.missingPackage
     }
 
-    private static func parseTocTitles(package: PackageData, baseURL: URL) -> [String: String] {
-        guard let tocID = package.tocID,
-              let tocItem = package.manifest[tocID],
+    private static func parseTocItems(package: PackageData, baseURL: URL) -> [ParsedTocItem] {
+        guard let tocItem = package.tocItem,
               let tocURL = URL(string: tocItem.href, relativeTo: baseURL)?.absoluteURL,
               let parser = XMLParser(contentsOf: tocURL) else {
-            return [:]
+            return []
         }
 
         let delegate = TocXMLDelegate()
         parser.delegate = delegate
         if parser.parse() {
-            return delegate.titlesByHref
+            return delegate.items
         }
-        return [:]
+        return []
+    }
+
+    private static func titlesByHref(from items: [ParsedTocItem]) -> [String: String] {
+        var titles: [String: String] = [:]
+        for item in items {
+            let key = normalizedHref(item.href)
+            if !key.isEmpty && !item.title.isEmpty {
+                titles[key] = item.title
+            }
+            titles.merge(titlesByHref(from: item.children)) { current, _ in current }
+        }
+        return titles
+    }
+
+    private static func resolveTocItems(_ items: [ParsedTocItem], baseURL: URL, chapters: [EpubChapter]) -> [EpubTocItem] {
+        var resolvedItems: [EpubTocItem] = []
+
+        for item in items {
+            let children = resolveTocItems(item.children, baseURL: baseURL, chapters: chapters)
+            let title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let targetURL = URL(string: item.href, relativeTo: baseURL)?.absoluteURL
+            let resolvedChapterIndex: Int?
+            if let targetURL = targetURL {
+                resolvedChapterIndex = chapterIndex(for: targetURL, chapters: chapters)
+            } else {
+                resolvedChapterIndex = nil
+            }
+
+            if title.isEmpty || resolvedChapterIndex == nil && children.isEmpty {
+                continue
+            }
+
+            resolvedItems.append(EpubTocItem(title: title,
+                                             url: targetURL,
+                                             chapterIndex: resolvedChapterIndex,
+                                             children: children))
+        }
+
+        return resolvedItems
+    }
+
+    private static func fallbackTocItems(chapters: [EpubChapter]) -> [EpubTocItem] {
+        return chapters.enumerated().map { index, chapter in
+            return EpubTocItem(title: chapter.title,
+                               url: chapter.url,
+                               chapterIndex: index,
+                               children: [])
+        }
+    }
+
+    private static func chapterIndex(for url: URL, chapters: [EpubChapter]) -> Int? {
+        let normalizedURL = normalizedFileURL(url)
+        return chapters.firstIndex { normalizedFileURL($0.url) == normalizedURL }
+    }
+
+    private static func normalizedFileURL(_ url: URL) -> URL {
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: true)
+        components?.fragment = nil
+        return (components?.url ?? url).standardizedFileURL
     }
 
     private static func readableTitle(from href: String) -> String {
@@ -735,6 +836,22 @@ private struct PackageData {
     let manifest: [String: ManifestItem]
     let spine: [String]
     let tocID: String?
+
+    var tocItem: ManifestItem? {
+        if let tocID = tocID, let item = manifest[tocID] {
+            return item
+        }
+
+        return manifest.values.first {
+            $0.mediaType.lowercased().contains("ncx") || $0.href.lowercased().hasSuffix(".ncx")
+        }
+    }
+}
+
+private struct ParsedTocItem {
+    let title: String
+    let href: String
+    let children: [ParsedTocItem]
 }
 
 private final class ContainerXMLDelegate: NSObject, XMLParserDelegate {
@@ -819,14 +936,15 @@ private final class PackageXMLDelegate: NSObject, XMLParserDelegate {
 }
 
 private final class TocXMLDelegate: NSObject, XMLParserDelegate {
-    private struct NavPoint {
+    private final class NavPoint {
         var title = ""
         var href = ""
+        var children: [ParsedTocItem] = []
         var readingTitle = false
     }
 
     private var navStack: [NavPoint] = []
-    var titlesByHref: [String: String] = [:]
+    private(set) var items: [ParsedTocItem] = []
 
     func parser(_ parser: XMLParser,
                 didStartElement elementName: String,
@@ -842,7 +960,7 @@ private final class TocXMLDelegate: NSObject, XMLParserDelegate {
         } else if name == "content",
                   !navStack.isEmpty,
                   let src = attributeDict["src"] {
-            navStack[navStack.count - 1].href = normalizedHref(src)
+            navStack[navStack.count - 1].href = decodedHref(src)
         }
     }
 
@@ -863,15 +981,21 @@ private final class TocXMLDelegate: NSObject, XMLParserDelegate {
             navStack[navStack.count - 1].readingTitle = false
         } else if name == "navpoint", let navPoint = navStack.popLast() {
             let title = navPoint.title.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !navPoint.href.isEmpty && !title.isEmpty {
-                titlesByHref[navPoint.href] = title
+            guard !title.isEmpty || !navPoint.href.isEmpty || !navPoint.children.isEmpty else {
+                return
+            }
+
+            let item = ParsedTocItem(title: title, href: navPoint.href, children: navPoint.children)
+            if navStack.isEmpty {
+                items.append(item)
+            } else {
+                navStack[navStack.count - 1].children.append(item)
             }
         }
     }
 
-    private func normalizedHref(_ href: String) -> String {
-        let path = href.components(separatedBy: "#").first ?? href
-        return path.removingPercentEncoding ?? path
+    private func decodedHref(_ href: String) -> String {
+        return href.removingPercentEncoding ?? href
     }
 }
 
