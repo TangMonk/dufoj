@@ -1658,21 +1658,8 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
             return { text: selectedText, status: 'overlap' };
           }
 
-          var startBoundary = boundaryAt(info.ranges, selected.start, false);
-          var endBoundary = boundaryAt(info.ranges, selected.end, true);
-          if (!startBoundary || !endBoundary) {
-            return { text: selectedText, status: 'wrapFailed' };
-          }
-
-          try {
-            var cleanRange = document.createRange();
-            cleanRange.setStart(startBoundary.node, startBoundary.offset);
-            cleanRange.setEnd(endBoundary.node, endBoundary.offset);
-            var wrapper = document.createElement('span');
-            wrapper.className = 'dufoj-excerpt-underline';
-            wrapper.appendChild(cleanRange.extractContents());
-            cleanRange.insertNode(wrapper);
-          } catch (e) {
+          if (!boundaryAt(info.ranges, selected.start, false) ||
+              !boundaryAt(info.ranges, selected.end, true)) {
             return { text: selectedText, status: 'wrapFailed' };
           }
 
