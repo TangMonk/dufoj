@@ -410,8 +410,9 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
     }
 
     private func installExcerptMenuItem() {
-        let item = UIMenuItem(title: "摘录", action: #selector(createExcerptFromSelection))
+        let item = UIMenuItem(title: "📝摘录", action: #selector(createExcerptFromSelection))
         UIMenuController.shared.menuItems = [item]
+        UIMenuController.shared.update()
     }
 
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
