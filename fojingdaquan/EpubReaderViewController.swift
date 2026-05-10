@@ -37,6 +37,30 @@ private struct EpubReadingPosition {
     let fontScale: CGFloat
 }
 
+private struct DeepSeekChatMessage: Codable {
+    let role: String
+    let content: String
+}
+
+private struct DeepSeekChatRequest: Codable {
+    let model: String
+    let messages: [DeepSeekChatMessage]
+    let stream: Bool
+}
+
+private struct DeepSeekChatResponse: Codable {
+    struct Choice: Codable {
+        let message: DeepSeekChatMessage
+    }
+
+    struct APIError: Codable {
+        let message: String
+    }
+
+    let choices: [Choice]?
+    let error: APIError?
+}
+
 private enum EpubReaderError: Error {
     case unzipFailed
     case missingContainer
@@ -44,11 +68,38 @@ private enum EpubReaderError: Error {
     case missingChapters
 }
 
+private enum DeepSeekExplanationError: LocalizedError {
+    case invalidURL
+    case invalidResponse
+    case requestFailed(String)
+    case emptyResponse
+    case cancelled
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidURL:
+            return "AI 服务地址无效"
+        case .invalidResponse:
+            return "AI 服务返回异常"
+        case .requestFailed(let message):
+            return message
+        case .emptyResponse:
+            return "AI 服务没有返回解释内容"
+        case .cancelled:
+            return "已取消"
+        }
+    }
+}
+
 final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
     private static let defaultFontScale: CGFloat = 3.0
     private static let fontScaleStep: CGFloat = 0.5
     private static let minimumFontScale: CGFloat = 0.5
     private static let maximumFontScale: CGFloat = 6.0
+    private static let deepSeekAPIURL = "https://api.deepseek.com/chat/completions"
+    private static let deepSeekAPIKey = "sk-efa5fbb8c7574ac8a56384c7452a9a24"
+    private static let deepSeekModel = "deepseek-v4-pro"
+    private static let deepSeekSystemPrompt = "你是一个专业的佛经翻译人员，把文言文佛经翻译成白话文，采用直译为主、文白相间的风格, 既保持经典庄严感又确保现代人能理解"
 
     private let epubURL: URL
     private let suggestedTitle: String
@@ -66,6 +117,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
     private var fontScale: CGFloat = EpubReaderViewController.defaultFontScale
     private var pendingScrollY: Double?
     private var pendingScrollToExcerptID: Int64?
+    private var activeAIExplanationTask: URLSessionDataTask?
     private var readingPositionKey: String {
         return "dufoj.epubReader.position.\(epubURL.path)"
     }
@@ -123,6 +175,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
     }
 
     deinit {
+        activeAIExplanationTask?.cancel()
         NotificationCenter.default.removeObserver(self)
     }
 
@@ -410,8 +463,9 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
     }
 
     private func installExcerptMenuItem() {
-        let item = UIMenuItem(title: "📝摘录", action: #selector(createExcerptFromSelection))
-        UIMenuController.shared.menuItems = [item]
+        let excerptItem = UIMenuItem(title: "📝摘录", action: #selector(createExcerptFromSelection))
+        let explainItem = UIMenuItem(title: "AI解释", action: #selector(explainSelectionWithAI))
+        UIMenuController.shared.menuItems = [excerptItem, explainItem]
         UIMenuController.shared.update()
     }
 
@@ -419,20 +473,25 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
     override func buildMenu(with builder: UIMenuBuilder) {
         super.buildMenu(with: builder)
 
-        let command = UICommand(title: "📝摘录",
-                                image: nil,
-                                action: #selector(createExcerptFromSelection),
-                                propertyList: nil)
+        let excerptCommand = UICommand(title: "📝摘录",
+                                       image: nil,
+                                       action: #selector(createExcerptFromSelection),
+                                       propertyList: nil)
+        let explainCommand = UICommand(title: "AI解释",
+                                       image: nil,
+                                       action: #selector(explainSelectionWithAI),
+                                       propertyList: nil)
         let menu = UIMenu(title: "",
                           image: nil,
                           identifier: UIMenu.Identifier("dufoj.excerpt.menu"),
                           options: .displayInline,
-                          children: [command])
+                          children: [excerptCommand, explainCommand])
         builder.insertChild(menu, atStartOfMenu: .standardEdit)
     }
 
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
-        if action == #selector(createExcerptFromSelection) {
+        if action == #selector(createExcerptFromSelection) ||
+            action == #selector(explainSelectionWithAI) {
             return true
         }
         return super.canPerformAction(action, withSender: sender)
@@ -474,6 +533,137 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
 
             self.applyExcerptsToCurrentDocument(scrollToExcerptID: excerpt.id, completion: nil)
         }
+    }
+
+    @objc private func explainSelectionWithAI() {
+        webView.evaluateJavaScript(selectionTextScript()) { [weak self] result, error in
+            guard let self = self else { return }
+            if let error = error {
+                LogDebug(log: "Read selection for AI explanation failed: \(error.localizedDescription)")
+                return
+            }
+
+            guard let selectedText = result as? String,
+                  !selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                ShowMessage(controller: self, msg: "请先选择一段文字", title: "AI解释")
+                return
+            }
+
+            self.showAIExplanation(for: selectedText)
+        }
+    }
+
+    private func selectionTextScript() -> String {
+        return """
+        (function() {
+          var selection = window.getSelection();
+          if (!selection || selection.rangeCount === 0) {
+            return null;
+          }
+          var text = selection.toString().replace(/^\\s+|\\s+$/g, '');
+          return text || null;
+        })();
+        """
+    }
+
+    private func showAIExplanation(for selectedText: String) {
+        activeAIExplanationTask?.cancel()
+
+        let alert = UIAlertController(title: "AI解释",
+                                      message: "正在解释...",
+                                      preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "关闭", style: .cancel) { [weak self] _ in
+            self?.activeAIExplanationTask?.cancel()
+            self?.activeAIExplanationTask = nil
+        })
+        present(alert, animated: true, completion: nil)
+
+        requestAIExplanation(for: selectedText) { [weak self, weak alert] result in
+            guard let self = self, let alert = alert else { return }
+            guard self.presentedViewController === alert else { return }
+
+            switch result {
+            case .success(let explanation):
+                alert.message = explanation
+                alert.addAction(UIAlertAction(title: "复制解释", style: .default) { _ in
+                    UIPasteboard.general.string = explanation
+                })
+            case .failure(let error):
+                if let deepSeekError = error as? DeepSeekExplanationError,
+                   case .cancelled = deepSeekError {
+                    return
+                }
+                alert.message = error.localizedDescription
+            }
+        }
+    }
+
+    private func requestAIExplanation(for selectedText: String, completion: @escaping (Result<String, Error>) -> Void) {
+        guard let url = URL(string: EpubReaderViewController.deepSeekAPIURL) else {
+            completion(.failure(DeepSeekExplanationError.invalidURL))
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(EpubReaderViewController.deepSeekAPIKey)", forHTTPHeaderField: "Authorization")
+
+        let body = DeepSeekChatRequest(model: EpubReaderViewController.deepSeekModel,
+                                       messages: [
+                                           DeepSeekChatMessage(role: "system", content: EpubReaderViewController.deepSeekSystemPrompt),
+                                           DeepSeekChatMessage(role: "user", content: "翻译：\(selectedText)")
+                                       ],
+                                       stream: false)
+        do {
+            request.httpBody = try JSONEncoder().encode(body)
+        } catch {
+            completion(.failure(error))
+            return
+        }
+
+        let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            let result: Result<String, Error>
+            defer {
+                DispatchQueue.main.async {
+                    self?.activeAIExplanationTask = nil
+                    completion(result)
+                }
+            }
+
+            if let error = error as NSError? {
+                if error.code == NSURLErrorCancelled {
+                    result = .failure(DeepSeekExplanationError.cancelled)
+                } else {
+                    result = .failure(DeepSeekExplanationError.requestFailed(error.localizedDescription))
+                }
+                return
+            }
+
+            guard let httpResponse = response as? HTTPURLResponse,
+                  let data = data else {
+                result = .failure(DeepSeekExplanationError.invalidResponse)
+                return
+            }
+
+            let decodedResponse = try? JSONDecoder().decode(DeepSeekChatResponse.self, from: data)
+            if !(200...299).contains(httpResponse.statusCode) {
+                let message = decodedResponse?.error?.message ?? HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode)
+                result = .failure(DeepSeekExplanationError.requestFailed(message))
+                return
+            }
+
+            guard let content = decodedResponse?.choices?.first?.message.content
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+                  !content.isEmpty else {
+                result = .failure(DeepSeekExplanationError.emptyResponse)
+                return
+            }
+
+            result = .success(content)
+        }
+        activeAIExplanationTask = task
+        task.resume()
     }
 
     private func selectionExcerptScript() -> String {
