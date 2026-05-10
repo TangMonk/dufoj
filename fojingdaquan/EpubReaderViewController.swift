@@ -779,26 +779,31 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
           text-underline-offset: 0.16em !important;
         }
         .dufoj-ai-inline-wrapper {
-          display: flex !important;
-          justify-content: flex-end !important;
-          margin: -0.55em 0 0.7em !important;
+          display: inline-flex !important;
+          vertical-align: baseline !important;
+          margin: 0 0 0 0.35em !important;
+          line-height: 1 !important;
         }
         .dufoj-ai-inline-button {
           display: inline-flex !important;
           align-items: center !important;
-          gap: 4px !important;
-          border: 1px solid rgba(10, 132, 255, 0.36) !important;
-          border-radius: 14px !important;
-          padding: 3px 8px !important;
-          background: \(isDarkModeEnabled ? "rgba(45, 92, 160, 0.34)" : "rgba(255, 255, 255, 0.72)") !important;
+          justify-content: center !important;
+          gap: 5px !important;
+          min-width: 42px !important;
+          min-height: 32px !important;
+          border: 1px solid rgba(10, 132, 255, 0.46) !important;
+          border-radius: 16px !important;
+          padding: 5px 9px !important;
+          background: \(isDarkModeEnabled ? "rgba(45, 92, 160, 0.42)" : "rgba(255, 255, 255, 0.86)") !important;
           color: #0a84ff !important;
-          font: 500 12px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif !important;
+          font: 600 14px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif !important;
           line-height: 1.2 !important;
           -webkit-text-size-adjust: none !important;
+          box-shadow: 0 1px 4px rgba(10, 132, 255, 0.18) !important;
         }
         .dufoj-ai-inline-button svg {
-          width: 14px !important;
-          height: 14px !important;
+          width: 19px !important;
+          height: 19px !important;
           display: block !important;
         }
         """
@@ -914,7 +919,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
 
           function candidateBlocks() {
             return Array.prototype.slice.call(document.querySelectorAll('p, div.lg')).filter(function(block) {
-              if (!block || block.closest('.dufoj-ai-inline-wrapper')) {
+              if (!block || block.querySelector('.dufoj-ai-inline-wrapper')) {
                 return false;
               }
               var text = (block.innerText || block.textContent || '').replace(/[\\s\\u3000]+/g, '');
@@ -942,11 +947,8 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
             });
 
             wrapper.appendChild(button);
-            if (block.nextSibling) {
-              block.parentNode.insertBefore(wrapper, block.nextSibling);
-            } else {
-              block.parentNode.appendChild(wrapper);
-            }
+            block.appendChild(document.createTextNode(' '));
+            block.appendChild(wrapper);
           });
 
           return true;
