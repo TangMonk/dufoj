@@ -781,29 +781,29 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
         .dufoj-ai-inline-wrapper {
           display: inline-flex !important;
           vertical-align: baseline !important;
-          margin: 0 0 0 0.35em !important;
+          margin: 0 0 0 0.45em !important;
           line-height: 1 !important;
         }
         .dufoj-ai-inline-button {
           display: inline-flex !important;
           align-items: center !important;
           justify-content: center !important;
-          gap: 5px !important;
-          min-width: 42px !important;
-          min-height: 32px !important;
+          gap: 6px !important;
+          min-width: 54px !important;
+          min-height: 40px !important;
           border: 1px solid rgba(10, 132, 255, 0.46) !important;
-          border-radius: 16px !important;
-          padding: 5px 9px !important;
+          border-radius: 20px !important;
+          padding: 7px 12px !important;
           background: \(isDarkModeEnabled ? "rgba(45, 92, 160, 0.42)" : "rgba(255, 255, 255, 0.86)") !important;
           color: #0a84ff !important;
-          font: 600 14px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif !important;
+          font: 600 16px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif !important;
           line-height: 1.2 !important;
           -webkit-text-size-adjust: none !important;
           box-shadow: 0 1px 4px rgba(10, 132, 255, 0.18) !important;
         }
         .dufoj-ai-inline-button svg {
-          width: 19px !important;
-          height: 19px !important;
+          width: 24px !important;
+          height: 24px !important;
           display: block !important;
         }
         """
