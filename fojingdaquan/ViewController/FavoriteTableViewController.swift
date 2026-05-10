@@ -13,8 +13,18 @@ class FavoriteTableViewController: UITableViewController {
     var parentId: Int64? = nil
     var items: [AnyObject] = []
     let searchController = UISearchController(searchResultsController: nil)
+    private let favoriteGuideView = UIView()
+    private let favoriteGuideLabel = UILabel()
+    private let favoriteGuideBookView = UIImageView()
+    private let favoriteGuideArrowLabel = UILabel()
+    private var didSetupFavoriteGuide = false
 
     //MARK: life circle
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        setupFavoriteGuideIfNeeded()
+    }
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
@@ -25,6 +35,107 @@ class FavoriteTableViewController: UITableViewController {
         }
         
         tableView.reloadData()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        startFavoriteGuideAnimation()
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        favoriteGuideBookView.layer.removeAnimation(forKey: "favoriteGuideSlide")
+        favoriteGuideArrowLabel.layer.removeAnimation(forKey: "favoriteGuideFade")
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        updateFavoriteGuideHeaderSize()
+    }
+
+    private func setupFavoriteGuideIfNeeded() {
+        guard parentId == nil, !didSetupFavoriteGuide else {
+            return
+        }
+
+        didSetupFavoriteGuide = true
+        favoriteGuideView.frame = CGRect(x: 0, y: 0, width: tableView.bounds.width, height: 64)
+        favoriteGuideView.backgroundColor = UIColor(red: 0.96, green: 0.94, blue: 0.89, alpha: 1)
+
+        favoriteGuideLabel.text = "按住书籍往右边滑动即可收藏"
+        favoriteGuideLabel.font = UIFont.systemFont(ofSize: 14)
+        favoriteGuideLabel.textColor = UIColor(red: 0.34, green: 0.28, blue: 0.18, alpha: 1)
+        favoriteGuideLabel.numberOfLines = 2
+        favoriteGuideLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        favoriteGuideBookView.image = UIImage(named: "book")
+        favoriteGuideBookView.contentMode = .scaleAspectFit
+        favoriteGuideBookView.translatesAutoresizingMaskIntoConstraints = false
+
+        favoriteGuideArrowLabel.text = ">"
+        favoriteGuideArrowLabel.font = UIFont.systemFont(ofSize: 22, weight: .semibold)
+        favoriteGuideArrowLabel.textColor = UIColor(red: 0.54, green: 0.42, blue: 0.20, alpha: 1)
+        favoriteGuideArrowLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        favoriteGuideView.addSubview(favoriteGuideBookView)
+        favoriteGuideView.addSubview(favoriteGuideArrowLabel)
+        favoriteGuideView.addSubview(favoriteGuideLabel)
+
+        NSLayoutConstraint.activate([
+            favoriteGuideBookView.leadingAnchor.constraint(equalTo: favoriteGuideView.leadingAnchor, constant: 18),
+            favoriteGuideBookView.centerYAnchor.constraint(equalTo: favoriteGuideView.centerYAnchor),
+            favoriteGuideBookView.widthAnchor.constraint(equalToConstant: 28),
+            favoriteGuideBookView.heightAnchor.constraint(equalToConstant: 28),
+
+            favoriteGuideArrowLabel.leadingAnchor.constraint(equalTo: favoriteGuideBookView.trailingAnchor, constant: 8),
+            favoriteGuideArrowLabel.centerYAnchor.constraint(equalTo: favoriteGuideBookView.centerYAnchor),
+            favoriteGuideArrowLabel.widthAnchor.constraint(equalToConstant: 20),
+
+            favoriteGuideLabel.leadingAnchor.constraint(equalTo: favoriteGuideArrowLabel.trailingAnchor, constant: 14),
+            favoriteGuideLabel.trailingAnchor.constraint(equalTo: favoriteGuideView.trailingAnchor, constant: -16),
+            favoriteGuideLabel.centerYAnchor.constraint(equalTo: favoriteGuideView.centerYAnchor)
+        ])
+
+        tableView.tableHeaderView = favoriteGuideView
+    }
+
+    private func updateFavoriteGuideHeaderSize() {
+        guard tableView.tableHeaderView === favoriteGuideView else {
+            return
+        }
+
+        let targetSize = CGSize(width: tableView.bounds.width, height: 64)
+        if favoriteGuideView.frame.size != targetSize {
+            favoriteGuideView.frame.size = targetSize
+            tableView.tableHeaderView = favoriteGuideView
+        }
+    }
+
+    private func startFavoriteGuideAnimation() {
+        guard tableView.tableHeaderView === favoriteGuideView else {
+            return
+        }
+
+        favoriteGuideBookView.layer.removeAnimation(forKey: "favoriteGuideSlide")
+        favoriteGuideArrowLabel.layer.removeAnimation(forKey: "favoriteGuideFade")
+
+        let slide = CABasicAnimation(keyPath: "transform.translation.x")
+        slide.fromValue = 0
+        slide.toValue = 20
+        slide.duration = 0.9
+        slide.autoreverses = true
+        slide.repeatCount = .infinity
+        slide.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        favoriteGuideBookView.layer.add(slide, forKey: "favoriteGuideSlide")
+
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0.35
+        fade.toValue = 1.0
+        fade.duration = 0.9
+        fade.autoreverses = true
+        fade.repeatCount = .infinity
+        fade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        favoriteGuideArrowLabel.layer.add(fade, forKey: "favoriteGuideFade")
     }
     //MARK: swipe to defavorite
     
