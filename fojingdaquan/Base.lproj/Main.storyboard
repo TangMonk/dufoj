@@ -10,7 +10,7 @@
         <!--Tab Bar Controller-->
         <scene sceneID="tOc-6O-r8U">
             <objects>
-                <tabBarController id="Qds-eT-93u" sceneMemberID="viewController">
+                <tabBarController id="Qds-eT-93u" customClass="MainTabBarController" customModule="fojingdaquan" customModuleProvider="target" sceneMemberID="viewController">
                     <tabBar key="tabBar" contentMode="scaleToFill" insetsLayoutMarginsFromSafeArea="NO" id="bel-Zm-fOg">
                         <rect key="frame" x="0.0" y="0.0" width="414" height="49"/>
                         <autoresizingMask key="autoresizingMask"/>

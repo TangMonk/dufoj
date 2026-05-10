@@ -331,3 +331,120 @@ class FavoriteTableViewController: UITableViewController {
      */
     
 }
+
+class MainTabBarController: UITabBarController {
+    private var didAppendExcerptTab = false
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        appendExcerptTabIfNeeded()
+    }
+
+    private func appendExcerptTabIfNeeded() {
+        guard !didAppendExcerptTab else {
+            return
+        }
+
+        didAppendExcerptTab = true
+        let excerptController = ExcerptTableViewController(style: .plain)
+        excerptController.title = "摘录"
+
+        let navigationController = UINavigationController(rootViewController: excerptController)
+        navigationController.tabBarItem = UITabBarItem(title: "摘录", image: UIImage(named: "book"), tag: 3)
+        viewControllers = (viewControllers ?? []) + [navigationController]
+    }
+}
+
+class ExcerptTableViewController: UITableViewController {
+    private let cellIdentifier = "excerptCell"
+    private let emptyStateLabel = UILabel()
+    private var items: [Excerpt] = []
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = "摘录"
+        tableView.rowHeight = UITableView.automaticDimension
+        tableView.estimatedRowHeight = 88
+        setupEmptyState()
+        updateColors()
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        loadExcerpts()
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+
+        if #available(iOS 13.0, *),
+           previousTraitCollection?.hasDifferentColorAppearance(comparedTo: traitCollection) == true {
+            updateColors()
+            tableView.reloadData()
+        }
+    }
+
+    override func numberOfSections(in tableView: UITableView) -> Int {
+        return 1
+    }
+
+    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        return items.count
+    }
+
+    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: cellIdentifier) ??
+            UITableViewCell(style: .subtitle, reuseIdentifier: cellIdentifier)
+        let excerpt = items[indexPath.row]
+
+        cell.textLabel?.text = excerpt.selectedText
+        cell.textLabel?.numberOfLines = 3
+        cell.textLabel?.font = UIFont.systemFont(ofSize: 16)
+        cell.textLabel?.textColor = isDarkModeEnabled ? UIColor(red: 0.82, green: 0.82, blue: 0.82, alpha: 1) : UIColor(red: 0.12, green: 0.14, blue: 0.16, alpha: 1)
+
+        cell.detailTextLabel?.text = "\(excerpt.bookTitle) · \(excerpt.chapterTitle)"
+        cell.detailTextLabel?.numberOfLines = 2
+        cell.detailTextLabel?.font = UIFont.systemFont(ofSize: 13)
+        cell.detailTextLabel?.textColor = isDarkModeEnabled ? UIColor(red: 0.58, green: 0.58, blue: 0.60, alpha: 1) : UIColor(white: 0.45, alpha: 1)
+
+        cell.backgroundColor = tableView.backgroundColor
+        cell.accessoryType = .disclosureIndicator
+        return cell
+    }
+
+    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+        let excerpt = items[indexPath.row]
+        let book = Books(title: excerpt.bookTitle, location: excerpt.bookLocation)
+        openEpubReader(book: book, targetExcerpt: excerpt)
+    }
+
+    private func loadExcerpts() {
+        items = DatabaseAccessor.getExcerpts()
+        updateEmptyStateVisibility()
+        tableView.reloadData()
+    }
+
+    private func setupEmptyState() {
+        emptyStateLabel.text = "暂无摘录"
+        emptyStateLabel.textAlignment = .center
+        emptyStateLabel.numberOfLines = 0
+        emptyStateLabel.font = UIFont.systemFont(ofSize: 16)
+    }
+
+    private func updateEmptyStateVisibility() {
+        tableView.backgroundView = items.isEmpty ? emptyStateLabel : nil
+    }
+
+    private func updateColors() {
+        tableView.backgroundColor = isDarkModeEnabled ? UIColor(red: 0.13, green: 0.13, blue: 0.14, alpha: 1) : UIColor(red: 0.98, green: 0.96, blue: 0.90, alpha: 1)
+        emptyStateLabel.textColor = isDarkModeEnabled ? UIColor(red: 0.62, green: 0.62, blue: 0.65, alpha: 1) : UIColor(white: 0.45, alpha: 1)
+    }
+
+    private var isDarkModeEnabled: Bool {
+        if #available(iOS 13.0, *) {
+            return traitCollection.userInterfaceStyle == .dark
+        }
+        return false
+    }
+}

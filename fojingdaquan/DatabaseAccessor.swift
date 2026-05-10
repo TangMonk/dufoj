@@ -9,6 +9,35 @@
 import Foundation
 import SQLite
 
+class Excerpt {
+    let id: Int64
+    let bookTitle: String
+    let bookLocation: String
+    let chapterIndex: Int
+    let chapterTitle: String
+    let selectedText: String
+    let occurrence: Int
+    let createdAt: Double
+
+    init(id: Int64,
+         bookTitle: String,
+         bookLocation: String,
+         chapterIndex: Int,
+         chapterTitle: String,
+         selectedText: String,
+         occurrence: Int,
+         createdAt: Double) {
+        self.id = id
+        self.bookTitle = bookTitle
+        self.bookLocation = bookLocation
+        self.chapterIndex = chapterIndex
+        self.chapterTitle = chapterTitle
+        self.selectedText = selectedText
+        self.occurrence = occurrence
+        self.createdAt = createdAt
+    }
+}
+
 
 class DatabaseAccessor {
     struct category {
@@ -59,6 +88,7 @@ class DatabaseAccessor {
         
         do{
             DatabaseAccessor.mainDB = try Connection(finalDatabaseURL.absoluteString)
+            createExcerptTableIfNeeded()
         }catch{
             LogDebug(log: "Database initialize failed: \(error.localizedDescription)")
         }
@@ -95,6 +125,50 @@ class DatabaseAccessor {
                 return false
             }
         }
+    }
+
+    private static func write<T>(_ fallback: T, _ block: (Connection) throws -> T) -> T {
+        return databaseQueue.sync {
+            guard let db = mainDB else {
+                LogDebug(log: "Database is not initialized")
+                return fallback
+            }
+
+            do {
+                return try block(db)
+            } catch {
+                LogDebug(log: "Database write failed: \(error.localizedDescription)")
+                return fallback
+            }
+        }
+    }
+
+    private static func createExcerptTableIfNeeded() {
+        _ = write { db in
+            try db.run("""
+            CREATE TABLE IF NOT EXISTS excerpts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                book_title TEXT NOT NULL,
+                book_location TEXT NOT NULL,
+                chapter_index INTEGER NOT NULL,
+                chapter_title TEXT NOT NULL,
+                selected_text TEXT NOT NULL,
+                occurrence INTEGER NOT NULL,
+                created_at REAL NOT NULL
+            )
+            """)
+        }
+    }
+
+    private static func excerpt(from row: Statement.Element) -> Excerpt {
+        return Excerpt(id: row[0] as! Int64,
+                       bookTitle: row[1] as! String,
+                       bookLocation: row[2] as! String,
+                       chapterIndex: Int(row[3] as! Int64),
+                       chapterTitle: row[4] as! String,
+                       selectedText: row[5] as! String,
+                       occurrence: Int(row[6] as! Int64),
+                       createdAt: (row[7] as? Double) ?? (row[7] as? NSNumber)?.doubleValue ?? 0)
     }
     
     public static func searchByTitle(title: String) -> [AnyObject] {
@@ -284,6 +358,79 @@ class DatabaseAccessor {
             }
 
             return result
+        }
+    }
+
+    public static func addExcerpt(bookTitle: String,
+                                  bookLocation: String,
+                                  chapterIndex: Int,
+                                  chapterTitle: String,
+                                  selectedText: String,
+                                  occurrence: Int) -> Excerpt? {
+        let text = selectedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else {
+            return nil
+        }
+
+        return write(nil) { db in
+            let createdAt = Date().timeIntervalSince1970
+            try db.run("""
+            INSERT INTO excerpts
+                (book_title, book_location, chapter_index, chapter_title, selected_text, occurrence, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, [bookTitle, bookLocation, Int64(chapterIndex), chapterTitle, text, Int64(occurrence), createdAt])
+
+            return Excerpt(id: db.lastInsertRowid,
+                           bookTitle: bookTitle,
+                           bookLocation: bookLocation,
+                           chapterIndex: chapterIndex,
+                           chapterTitle: chapterTitle,
+                           selectedText: text,
+                           occurrence: occurrence,
+                           createdAt: createdAt)
+        }
+    }
+
+    public static func getExcerpts() -> [Excerpt] {
+        return read([]) { db in
+            var result: [Excerpt] = []
+            for row in try db.prepare("""
+            SELECT id, book_title, book_location, chapter_index, chapter_title, selected_text, occurrence, created_at
+            FROM excerpts
+            ORDER BY created_at DESC, id DESC
+            """) {
+                result.append(excerpt(from: row))
+            }
+            return result
+        }
+    }
+
+    public static func getExcerpts(bookLocation: String, chapterIndex: Int) -> [Excerpt] {
+        return read([]) { db in
+            var result: [Excerpt] = []
+            for row in try db.prepare("""
+            SELECT id, book_title, book_location, chapter_index, chapter_title, selected_text, occurrence, created_at
+            FROM excerpts
+            WHERE book_location = ? AND chapter_index = ?
+            ORDER BY created_at ASC, id ASC
+            """, [bookLocation, Int64(chapterIndex)]) {
+                result.append(excerpt(from: row))
+            }
+            return result
+        }
+    }
+
+    public static func getExcerpt(id: Int64) -> Excerpt? {
+        return read(nil) { db in
+            for row in try db.prepare("""
+            SELECT id, book_title, book_location, chapter_index, chapter_title, selected_text, occurrence, created_at
+            FROM excerpts
+            WHERE id = ?
+            LIMIT 1
+            """, [id]) {
+                return excerpt(from: row)
+            }
+            return nil
         }
     }
 }

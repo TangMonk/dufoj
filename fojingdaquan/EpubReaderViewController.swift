@@ -52,6 +52,8 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
 
     private let epubURL: URL
     private let suggestedTitle: String
+    private let bookLocation: String
+    private let targetExcerpt: Excerpt?
 
     private var webView: WKWebView!
     private let bottomToolbar = UIView()
@@ -63,13 +65,16 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
     private var currentChapterIndex = 0
     private var fontScale: CGFloat = EpubReaderViewController.defaultFontScale
     private var pendingScrollY: Double?
+    private var pendingScrollToExcerptID: Int64?
     private var readingPositionKey: String {
         return "dufoj.epubReader.position.\(epubURL.path)"
     }
 
-    init(epubURL: URL, title: String) {
+    init(epubURL: URL, title: String, bookLocation: String = "", targetExcerpt: Excerpt? = nil) {
         self.epubURL = epubURL
         self.suggestedTitle = title
+        self.bookLocation = bookLocation
+        self.targetExcerpt = targetExcerpt
         super.init(nibName: nil, bundle: nil)
         hidesBottomBarWhenPushed = true
     }
@@ -90,6 +95,16 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
         loadEpub()
     }
 
+    override var canBecomeFirstResponder: Bool {
+        return true
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        installExcerptMenuItem()
+        becomeFirstResponder()
+    }
+
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
         super.traitCollectionDidChange(previousTraitCollection)
 
@@ -104,6 +119,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         saveCurrentPosition()
+        UIMenuController.shared.menuItems = nil
     }
 
     deinit {
@@ -222,8 +238,15 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
                     self.title = book.title
                     let position = self.savedReadingPosition(chapterCount: book.chapters.count)
                     self.fontScale = position?.fontScale ?? EpubReaderViewController.defaultFontScale
-                    self.currentChapterIndex = position?.chapterIndex ?? 0
-                    self.loadCurrentChapter(scrollY: position?.scrollY)
+                    if let excerpt = self.targetExcerpt,
+                       book.chapters.indices.contains(excerpt.chapterIndex) {
+                        self.currentChapterIndex = excerpt.chapterIndex
+                        self.pendingScrollToExcerptID = excerpt.id
+                        self.loadCurrentChapter(scrollY: nil)
+                    } else {
+                        self.currentChapterIndex = position?.chapterIndex ?? 0
+                        self.loadCurrentChapter(scrollY: position?.scrollY)
+                    }
                 case .failure:
                     ShowMessage(controller: self, msg: "无法打开这本 EPUB", title: "错误")
                 }
@@ -298,6 +321,12 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
         }
         img, svg { max-width: 100% !important; height: auto !important; }
         a { color: #0a84ff !important; }
+        .dufoj-excerpt-underline {
+          text-decoration-line: underline !important;
+          text-decoration-thickness: 0.12em !important;
+          text-decoration-color: #2f9e44 !important;
+          text-underline-offset: 0.16em !important;
+        }
         """
     }
 
@@ -380,6 +409,298 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
         webView.evaluateJavaScript(readerPoemScript(), completionHandler: nil)
     }
 
+    private func installExcerptMenuItem() {
+        let item = UIMenuItem(title: "摘录", action: #selector(createExcerptFromSelection))
+        UIMenuController.shared.menuItems = [item]
+    }
+
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        if action == #selector(createExcerptFromSelection) {
+            return true
+        }
+        return super.canPerformAction(action, withSender: sender)
+    }
+
+    @objc private func createExcerptFromSelection() {
+        guard let book = book, book.chapters.indices.contains(currentChapterIndex) else {
+            return
+        }
+
+        webView.evaluateJavaScript(selectionExcerptScript()) { [weak self] result, error in
+            guard let self = self else { return }
+            if let error = error {
+                LogDebug(log: "Create excerpt failed: \(error.localizedDescription)")
+                return
+            }
+
+            guard let dictionary = result as? [String: Any],
+                  let text = dictionary["text"] as? String,
+                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return
+            }
+
+            let occurrence = Int(self.doubleValue(from: dictionary["occurrence"]))
+            let chapter = book.chapters[self.currentChapterIndex]
+            guard let excerpt = DatabaseAccessor.addExcerpt(bookTitle: book.title,
+                                                            bookLocation: self.bookLocation,
+                                                            chapterIndex: self.currentChapterIndex,
+                                                            chapterTitle: chapter.title,
+                                                            selectedText: text,
+                                                            occurrence: occurrence) else {
+                ShowMessage(controller: self, msg: "保存摘录失败", title: "错误")
+                return
+            }
+
+            self.applyExcerptsToCurrentDocument(scrollToExcerptID: excerpt.id, completion: nil)
+        }
+    }
+
+    private func selectionExcerptScript() -> String {
+        return """
+        (function() {
+          function textNodesUnder(root) {
+            var nodes = [];
+            var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+              acceptNode: function(node) {
+                if (!node.nodeValue || node.nodeValue.length === 0) {
+                  return NodeFilter.FILTER_REJECT;
+                }
+                var parent = node.parentElement;
+                if (!parent || /^(SCRIPT|STYLE|NOSCRIPT)$/i.test(parent.tagName)) {
+                  return NodeFilter.FILTER_REJECT;
+                }
+                return NodeFilter.FILTER_ACCEPT;
+              }
+            });
+            var current;
+            while ((current = walker.nextNode())) {
+              nodes.push(current);
+            }
+            return nodes;
+          }
+
+          function documentTextInfo() {
+            var nodes = textNodesUnder(document.body || document.documentElement);
+            var text = '';
+            var ranges = [];
+            nodes.forEach(function(node) {
+              ranges.push({ node: node, start: text.length, end: text.length + node.nodeValue.length });
+              text += node.nodeValue;
+            });
+            return { text: text, ranges: ranges };
+          }
+
+          function indexOfNode(ranges, node) {
+            for (var i = 0; i < ranges.length; i++) {
+              if (ranges[i].node === node) {
+                return ranges[i].start;
+              }
+            }
+            return -1;
+          }
+
+          var selection = window.getSelection();
+          if (!selection || selection.rangeCount === 0) {
+            return null;
+          }
+
+          var selectedText = selection.toString().replace(/^\\s+|\\s+$/g, '');
+          if (!selectedText) {
+            return null;
+          }
+
+          var range = selection.getRangeAt(0);
+          var info = documentTextInfo();
+          var start = indexOfNode(info.ranges, range.startContainer);
+          start = start >= 0 ? start + range.startOffset : info.text.indexOf(selectedText);
+
+          var occurrence = 0;
+          if (start > 0) {
+            var searchFrom = 0;
+            while (true) {
+              var found = info.text.indexOf(selectedText, searchFrom);
+              if (found < 0 || found >= start) {
+                break;
+              }
+              occurrence += 1;
+              searchFrom = found + Math.max(selectedText.length, 1);
+            }
+          }
+
+          try {
+            var wrapper = document.createElement('span');
+            wrapper.className = 'dufoj-excerpt-underline';
+            wrapper.appendChild(range.extractContents());
+            range.insertNode(wrapper);
+          } catch (e) {}
+
+          selection.removeAllRanges();
+          return { text: selectedText, occurrence: occurrence };
+        })();
+        """
+    }
+
+    private func applyExcerptsToCurrentDocument(scrollToExcerptID: Int64?, completion: (() -> Void)?) {
+        guard !bookLocation.isEmpty else {
+            completion?()
+            return
+        }
+
+        let excerpts = DatabaseAccessor.getExcerpts(bookLocation: bookLocation, chapterIndex: currentChapterIndex)
+        let payload = excerpts.map { excerpt -> [String: Any] in
+            return [
+                "id": excerpt.id,
+                "text": excerpt.selectedText,
+                "occurrence": excerpt.occurrence
+            ]
+        }
+
+        let payloadLiteral = javaScriptLiteral(from: payload, fallback: "[]")
+        let targetLiteral = scrollToExcerptID.map { "\($0)" } ?? "null"
+        let script = applyExcerptsScript(payloadLiteral: payloadLiteral, targetLiteral: targetLiteral)
+
+        webView.evaluateJavaScript(script) { _, error in
+            if let error = error {
+                LogDebug(log: "Apply excerpts failed: \(error.localizedDescription)")
+            }
+            completion?()
+        }
+    }
+
+    private func applyExcerptsScript(payloadLiteral: String, targetLiteral: String) -> String {
+        return """
+        (function() {
+          var excerpts = \(payloadLiteral);
+          var targetID = \(targetLiteral);
+
+          function unwrapExistingUnderlines() {
+            Array.prototype.slice.call(document.querySelectorAll('.dufoj-excerpt-underline')).forEach(function(node) {
+              var parent = node.parentNode;
+              if (!parent) {
+                return;
+              }
+              while (node.firstChild) {
+                parent.insertBefore(node.firstChild, node);
+              }
+              parent.removeChild(node);
+              parent.normalize();
+            });
+          }
+
+          function textNodesUnder(root) {
+            var nodes = [];
+            var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+              acceptNode: function(node) {
+                if (!node.nodeValue || node.nodeValue.length === 0) {
+                  return NodeFilter.FILTER_REJECT;
+                }
+                var parent = node.parentElement;
+                if (!parent || /^(SCRIPT|STYLE|NOSCRIPT)$/i.test(parent.tagName)) {
+                  return NodeFilter.FILTER_REJECT;
+                }
+                return NodeFilter.FILTER_ACCEPT;
+              }
+            });
+            var current;
+            while ((current = walker.nextNode())) {
+              nodes.push(current);
+            }
+            return nodes;
+          }
+
+          function documentTextInfo() {
+            var nodes = textNodesUnder(document.body || document.documentElement);
+            var text = '';
+            var ranges = [];
+            nodes.forEach(function(node) {
+              ranges.push({ node: node, start: text.length, end: text.length + node.nodeValue.length });
+              text += node.nodeValue;
+            });
+            return { text: text, ranges: ranges };
+          }
+
+          function boundaryAt(ranges, index, preferEnd) {
+            for (var i = 0; i < ranges.length; i++) {
+              var item = ranges[i];
+              if (index >= item.start && index < item.end) {
+                return { node: item.node, offset: index - item.start };
+              }
+              if (preferEnd && index === item.end) {
+                return { node: item.node, offset: item.node.nodeValue.length };
+              }
+            }
+            return null;
+          }
+
+          function indexForOccurrence(text, needle, occurrence) {
+            var from = 0;
+            var found = -1;
+            for (var i = 0; i <= occurrence; i++) {
+              found = text.indexOf(needle, from);
+              if (found < 0) {
+                return -1;
+              }
+              from = found + Math.max(needle.length, 1);
+            }
+            return found;
+          }
+
+          unwrapExistingUnderlines();
+
+          excerpts.forEach(function(excerpt) {
+            if (!excerpt || !excerpt.text) {
+              return;
+            }
+
+            var info = documentTextInfo();
+            var startIndex = indexForOccurrence(info.text, excerpt.text, Math.max(0, excerpt.occurrence || 0));
+            if (startIndex < 0) {
+              startIndex = info.text.indexOf(excerpt.text);
+            }
+            if (startIndex < 0) {
+              return;
+            }
+
+            var endIndex = startIndex + excerpt.text.length;
+            var start = boundaryAt(info.ranges, startIndex, false);
+            var end = boundaryAt(info.ranges, endIndex, true);
+            if (!start || !end) {
+              return;
+            }
+
+            try {
+              var range = document.createRange();
+              range.setStart(start.node, start.offset);
+              range.setEnd(end.node, end.offset);
+              var wrapper = document.createElement('span');
+              wrapper.className = 'dufoj-excerpt-underline';
+              wrapper.setAttribute('data-dufoj-excerpt-id', String(excerpt.id));
+              wrapper.appendChild(range.extractContents());
+              range.insertNode(wrapper);
+            } catch (e) {}
+          });
+
+          if (targetID !== null && targetID !== undefined) {
+            var target = document.querySelector('[data-dufoj-excerpt-id="' + targetID + '"]');
+            if (target) {
+              setTimeout(function() {
+                target.scrollIntoView({ block: 'center' });
+              }, 30);
+            }
+          }
+          return true;
+        })();
+        """
+    }
+
+    private func javaScriptLiteral(from object: Any, fallback: String) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: object, options: []),
+              let string = String(data: data, encoding: .utf8) else {
+            return fallback
+        }
+        return string
+    }
+
     @objc private func showPreviousChapter() {
         guard currentChapterIndex > 0 else { return }
         saveCurrentPosition()
@@ -423,7 +744,14 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        restorePendingScrollPosition()
+        let targetExcerptID = pendingScrollToExcerptID
+        pendingScrollToExcerptID = nil
+        applyExcerptsToCurrentDocument(scrollToExcerptID: targetExcerptID) { [weak self] in
+            guard targetExcerptID == nil else {
+                return
+            }
+            self?.restorePendingScrollPosition()
+        }
     }
 
     func webView(_ webView: WKWebView,
@@ -1005,12 +1333,19 @@ private func simpleName(_ elementName: String) -> String {
 
 extension UIViewController {
     func openEpubReader(book: Books) {
+        openEpubReader(book: book, targetExcerpt: nil)
+    }
+
+    func openEpubReader(book: Books, targetExcerpt: Excerpt?) {
         guard let bookPath = Bundle.main.path(forResource: "cbeta_epub_2019q4.bundle/\(book.location)", ofType: "epub") else {
             ShowMessage(controller: self, msg: "找不到 EPUB 文件", title: "错误")
             return
         }
 
-        let reader = EpubReaderViewController(epubURL: URL(fileURLWithPath: bookPath), title: book.title)
+        let reader = EpubReaderViewController(epubURL: URL(fileURLWithPath: bookPath),
+                                              title: book.title,
+                                              bookLocation: book.location,
+                                              targetExcerpt: targetExcerpt)
         if let navigationController = navigationController {
             navigationController.pushViewController(reader, animated: true)
         } else {
