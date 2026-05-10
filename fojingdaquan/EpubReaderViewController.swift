@@ -779,6 +779,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
           text-decoration-thickness: 0.12em !important;
           text-decoration-color: #2f9e44 !important;
           text-underline-offset: 0.16em !important;
+          cursor: pointer !important;
         }
         .dufoj-ai-inline-wrapper {
           display: inline-flex !important;
@@ -1042,12 +1043,14 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
             guard let self = self else { return }
             if let error = error {
                 LogDebug(log: "Create excerpt failed: \(error.localizedDescription)")
+                ShowMessage(controller: self, msg: "摘录失败，请重新选择", title: "摘录")
                 return
             }
 
             guard let dictionary = result as? [String: Any],
                   let text = dictionary["text"] as? String,
                   !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                ShowMessage(controller: self, msg: "请先选择一段文字", title: "摘录")
                 return
             }
             if let status = dictionary["status"] as? String {
@@ -1620,9 +1623,34 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
           var range = selection.getRangeAt(0);
           var info = documentTextInfo();
           var selected = selectedTextInfo(range, info);
-          var selectedText = selected.text;
-          if (!selectedText || selected.start < 0 || selected.end <= selected.start) {
+          var selectedText = selected.text || selection.toString().replace(/^[\\s\\u3000]+|[\\s\\u3000]+$/g, '');
+          if (!selectedText) {
             return null;
+          }
+          if (selected.start < 0 || selected.end <= selected.start) {
+            var fallbackStart = info.text.indexOf(selectedText);
+            if (fallbackStart < 0) {
+              var compactSelected = selectedText.replace(/[\\s\\u3000]+/g, '');
+              var compactText = '';
+              var compactMap = [];
+              for (var compactIndex = 0; compactIndex < info.text.length; compactIndex++) {
+                if (!/[\\s\\u3000]/.test(info.text.charAt(compactIndex))) {
+                  compactMap.push(compactIndex);
+                  compactText += info.text.charAt(compactIndex);
+                }
+              }
+              var compactStart = compactText.indexOf(compactSelected);
+              if (compactStart >= 0 && compactSelected.length > 0) {
+                fallbackStart = compactMap[compactStart];
+                selected.end = compactMap[compactStart + compactSelected.length - 1] + 1;
+              }
+            } else {
+              selected.end = fallbackStart + selectedText.length;
+            }
+            selected.start = fallbackStart;
+          }
+          if (selected.start < 0 || selected.end <= selected.start) {
+            return { text: selectedText, status: 'wrapFailed' };
           }
 
           if (hasExistingUnderlineBetween(info, selected.start, selected.end)) {
@@ -1872,7 +1900,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
           }
 
           function attachExcerptTapHandler(wrapper, excerpt) {
-            wrapper.addEventListener('click', function(event) {
+            function openActions(event) {
               var selection = window.getSelection();
               if (selection && selection.toString && selection.toString().replace(/^[\\s\\u3000]+|[\\s\\u3000]+$/g, '').length > 0) {
                 return;
@@ -1882,7 +1910,10 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
                 event.stopPropagation();
                 window.webkit.messageHandlers.dufojExcerptTapped.postMessage({ id: excerpt.id });
               }
-            });
+            }
+
+            wrapper.addEventListener('click', openActions);
+            wrapper.addEventListener('touchend', openActions);
           }
 
           unwrapExistingUnderlines();
