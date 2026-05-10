@@ -1083,7 +1083,12 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
                 return
             }
 
-            self.applyExcerptsToCurrentDocument(scrollToExcerptID: excerpt.id, completion: nil)
+            self.applySingleExcerptToCurrentDocument(excerpt) { [weak self] applied in
+                guard let self = self else { return }
+                if !applied {
+                    self.applyExcerptsToCurrentDocument(scrollToExcerptID: nil, completion: nil)
+                }
+            }
         }
     }
 
@@ -1693,7 +1698,9 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
 
         let payloadLiteral = javaScriptLiteral(from: payload, fallback: "[]")
         let targetLiteral = scrollToExcerptID.map { "\($0)" } ?? "null"
-        let script = applyExcerptsScript(payloadLiteral: payloadLiteral, targetLiteral: targetLiteral)
+        let script = applyExcerptsScript(payloadLiteral: payloadLiteral,
+                                         targetLiteral: targetLiteral,
+                                         unwrapExisting: true)
 
         webView.evaluateJavaScript(script) { _, error in
             if let error = error {
@@ -1703,11 +1710,42 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
         }
     }
 
-    private func applyExcerptsScript(payloadLiteral: String, targetLiteral: String) -> String {
+    private func applySingleExcerptToCurrentDocument(_ excerpt: Excerpt, completion: ((Bool) -> Void)?) {
+        let payload: [[String: Any]] = [[
+            "id": excerpt.id,
+            "text": excerpt.selectedText,
+            "occurrence": excerpt.occurrence,
+            "startOffset": excerpt.startOffset ?? NSNull(),
+            "endOffset": excerpt.endOffset ?? NSNull()
+        ]]
+
+        let payloadLiteral = javaScriptLiteral(from: payload, fallback: "[]")
+        let script = applyExcerptsScript(payloadLiteral: payloadLiteral,
+                                         targetLiteral: "null",
+                                         unwrapExisting: false)
+        webView.evaluateJavaScript(script) { result, error in
+            if let error = error {
+                LogDebug(log: "Apply single excerpt failed: \(error.localizedDescription)")
+                completion?(false)
+                return
+            }
+            if let number = result as? NSNumber {
+                completion?(number.intValue > 0)
+            } else if let value = result as? Int {
+                completion?(value > 0)
+            } else {
+                completion?(false)
+            }
+        }
+    }
+
+    private func applyExcerptsScript(payloadLiteral: String, targetLiteral: String, unwrapExisting: Bool) -> String {
+        let unwrapExistingLiteral = unwrapExisting ? "true" : "false"
         return """
         (function() {
           var excerpts = \(payloadLiteral);
           var targetID = \(targetLiteral);
+          var shouldUnwrapExisting = \(unwrapExistingLiteral);
 
           function unwrapExistingUnderlines() {
             Array.prototype.slice.call(document.querySelectorAll('.dufoj-excerpt-underline')).forEach(function(node) {
@@ -1903,7 +1941,9 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
             wrapper.addEventListener('touchend', openActions);
           }
 
-          unwrapExistingUnderlines();
+          if (shouldUnwrapExisting) {
+            unwrapExistingUnderlines();
+          }
 
           var initialInfo = documentTextInfo();
           var rangesToApply = [];
@@ -1918,7 +1958,13 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
             }
           });
 
+          var appliedCount = 0;
           nonOverlappingRanges(rangesToApply).forEach(function(item) {
+            if (document.querySelector('[data-dufoj-excerpt-id="' + item.excerpt.id + '"]')) {
+              appliedCount += 1;
+              return;
+            }
+
             var info = documentTextInfo();
             var start = boundaryAt(info.ranges, item.start, false);
             var end = boundaryAt(info.ranges, item.end, true);
@@ -1936,6 +1982,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
               wrapper.appendChild(range.extractContents());
               attachExcerptTapHandler(wrapper, item.excerpt);
               range.insertNode(wrapper);
+              appliedCount += 1;
             } catch (e) {}
           });
 
@@ -1947,7 +1994,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
               }, 30);
             }
           }
-          return true;
+          return appliedCount;
         })();
         """
     }
