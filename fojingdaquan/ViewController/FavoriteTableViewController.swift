@@ -17,12 +17,14 @@ class FavoriteTableViewController: UITableViewController {
     private let favoriteGuideLabel = UILabel()
     private let favoriteGuideBookView = UIImageView()
     private let favoriteGuideArrowLabel = UILabel()
+    private let emptyStateLabel = UILabel()
     private var didSetupFavoriteGuide = false
 
     //MARK: life circle
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        setupEmptyState()
         setupFavoriteGuideIfNeeded()
     }
     
@@ -35,7 +37,18 @@ class FavoriteTableViewController: UITableViewController {
         }
         
         updateFavoriteGuideVisibility()
+        updateEmptyStateVisibility()
         tableView.reloadData()
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+
+        if #available(iOS 13.0, *),
+           previousTraitCollection?.hasDifferentColorAppearance(comparedTo: traitCollection) == true {
+            updateFavoriteGuideColors()
+            updateEmptyStateColors()
+        }
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -61,11 +74,9 @@ class FavoriteTableViewController: UITableViewController {
 
         didSetupFavoriteGuide = true
         favoriteGuideView.frame = CGRect(x: 0, y: 0, width: tableView.bounds.width, height: 64)
-        favoriteGuideView.backgroundColor = UIColor(red: 0.96, green: 0.94, blue: 0.89, alpha: 1)
 
         favoriteGuideLabel.text = "按住书籍往左边滑动即可收藏"
         favoriteGuideLabel.font = UIFont.systemFont(ofSize: 14)
-        favoriteGuideLabel.textColor = UIColor(red: 0.34, green: 0.28, blue: 0.18, alpha: 1)
         favoriteGuideLabel.numberOfLines = 2
         favoriteGuideLabel.translatesAutoresizingMaskIntoConstraints = false
 
@@ -75,7 +86,6 @@ class FavoriteTableViewController: UITableViewController {
 
         favoriteGuideArrowLabel.text = "<"
         favoriteGuideArrowLabel.font = UIFont.systemFont(ofSize: 22, weight: .semibold)
-        favoriteGuideArrowLabel.textColor = UIColor(red: 0.54, green: 0.42, blue: 0.20, alpha: 1)
         favoriteGuideArrowLabel.translatesAutoresizingMaskIntoConstraints = false
 
         favoriteGuideView.addSubview(favoriteGuideBookView)
@@ -97,7 +107,33 @@ class FavoriteTableViewController: UITableViewController {
             favoriteGuideLabel.centerYAnchor.constraint(equalTo: favoriteGuideView.centerYAnchor)
         ])
 
+        updateFavoriteGuideColors()
         updateFavoriteGuideVisibility()
+    }
+
+    private func setupEmptyState() {
+        emptyStateLabel.text = "暂无收藏"
+        emptyStateLabel.textAlignment = .center
+        emptyStateLabel.numberOfLines = 0
+        emptyStateLabel.font = UIFont.systemFont(ofSize: 16)
+        updateEmptyStateColors()
+    }
+
+    private func updateFavoriteGuideColors() {
+        favoriteGuideView.backgroundColor = isDarkModeEnabled ? UIColor(red: 0.16, green: 0.15, blue: 0.13, alpha: 1) : UIColor(red: 0.96, green: 0.94, blue: 0.89, alpha: 1)
+        favoriteGuideLabel.textColor = isDarkModeEnabled ? UIColor(red: 0.86, green: 0.80, blue: 0.68, alpha: 1) : UIColor(red: 0.34, green: 0.28, blue: 0.18, alpha: 1)
+        favoriteGuideArrowLabel.textColor = isDarkModeEnabled ? UIColor(red: 0.93, green: 0.76, blue: 0.42, alpha: 1) : UIColor(red: 0.54, green: 0.42, blue: 0.20, alpha: 1)
+    }
+
+    private func updateEmptyStateColors() {
+        emptyStateLabel.textColor = isDarkModeEnabled ? UIColor(red: 0.62, green: 0.62, blue: 0.65, alpha: 1) : UIColor(white: 0.45, alpha: 1)
+    }
+
+    private var isDarkModeEnabled: Bool {
+        if #available(iOS 13.0, *) {
+            return traitCollection.userInterfaceStyle == .dark
+        }
+        return false
     }
 
     private func updateFavoriteGuideVisibility() {
@@ -117,6 +153,10 @@ class FavoriteTableViewController: UITableViewController {
             favoriteGuideArrowLabel.layer.removeAnimation(forKey: "favoriteGuideFade")
             tableView.tableHeaderView = nil
         }
+    }
+
+    private func updateEmptyStateVisibility() {
+        tableView.backgroundView = parentId == nil && items.isEmpty ? emptyStateLabel : nil
     }
 
     private func updateFavoriteGuideHeaderSize() {
@@ -158,18 +198,36 @@ class FavoriteTableViewController: UITableViewController {
         favoriteGuideArrowLabel.layer.add(fade, forKey: "favoriteGuideFade")
     }
     //MARK: swipe to defavorite
-    
-    override func tableView(_ tableView: UITableView, editActionsForRowAt indexPath: IndexPath) -> [UITableViewRowAction]? {
-        let defavoriteAction =  UITableViewRowAction(style: .normal,
-          title: "取消收藏") { (action, indexPath) in
-            let item = self.items[indexPath.row]
-            DatabaseAccessor.deFavorite(object: item)
-            self.items.remove(at: indexPath.row)
-            self.updateFavoriteGuideVisibility()
-            tableView.reloadData()
+
+    override func tableView(_ tableView: UITableView,
+                            trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
+        guard items.indices.contains(indexPath.row), isFavorited(items[indexPath.row]) else {
+            return nil
         }
-        
-        return [defavoriteAction]
+
+        let defavoriteAction = UIContextualAction(style: .normal, title: "取消收藏") { [weak self] _, _, completion in
+            guard let self = self, self.items.indices.contains(indexPath.row) else {
+                completion(false)
+                return
+            }
+
+            let item = self.items[indexPath.row]
+            let success = DatabaseAccessor.deFavorite(object: item)
+            if success {
+                self.items.remove(at: indexPath.row)
+                self.updateFavoriteGuideVisibility()
+                self.updateEmptyStateVisibility()
+                tableView.deleteRows(at: [indexPath], with: .automatic)
+            } else {
+                ShowMessage(controller: self, msg: "取消收藏失败", title: "错误")
+            }
+            completion(success)
+        }
+
+        defavoriteAction.backgroundColor = UIColor.red
+        let configuration = UISwipeActionsConfiguration(actions: [defavoriteAction])
+        configuration.performsFirstActionWithFullSwipe = false
+        return configuration
     }
 
     // MARK: - Table view data source
@@ -206,14 +264,25 @@ class FavoriteTableViewController: UITableViewController {
 
         }else if let category = item as? Categories {
             let storyboard = UIStoryboard(name: "Main", bundle: nil)
-            guard let controller = storyboard.instantiateViewController(withIdentifier: "favoriteTableView") as? FavoriteTableViewController
-                else { fatalError("error with navigation category") }
+            guard let controller = storyboard.instantiateViewController(withIdentifier: "favoriteTableView") as? FavoriteTableViewController else {
+                ShowMessage(controller: self, msg: "无法打开分类", title: "错误")
+                return
+            }
             controller.parentId = category.id
             controller.title = category.title
             navigationController?.pushViewController(controller, animated: true)
         }
         
         
+    }
+
+    private func isFavorited(_ item: AnyObject) -> Bool {
+        if let book = item as? Books {
+            return book.favorite == 1
+        } else if let category = item as? Categories {
+            return category.favorite == 1
+        }
+        return false
     }
     
     /*

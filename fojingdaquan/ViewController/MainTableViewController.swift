@@ -7,185 +7,197 @@
 //
 
 import UIKit
-import os.log
 
-class MainTableViewController: UITableViewController, UISearchResultsUpdating {
+class BookListTableViewController: UITableViewController, UISearchResultsUpdating {
     var parentId: Int64? = nil
     var items: [AnyObject] = []
-    let searchController = UISearchController(searchResultsController: nil)
-    
-    //MARK: life circle
-    
+
+    private let searchController = UISearchController(searchResultsController: nil)
+    private var pendingSearchWorkItem: DispatchWorkItem?
+    private var searchRequestId = 0
+
+    var rootCategoryId: Int64? {
+        return nil
+    }
+
+    var childStoryboardIdentifier: String {
+        return ""
+    }
+
+    func loadItems(parentId: Int64?) -> [AnyObject] {
+        return []
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
-        
+
         if parentId == nil {
-            parentId = DatabaseAccessor.buleiRootId()
+            parentId = rootCategoryId
         }
-        items = DatabaseAccessor.byBulei(parentId: parentId)
-        
-        
+
+        setupSearchController()
+        reloadItems(searchText: nil, debounce: false)
+    }
+
+    deinit {
+        pendingSearchWorkItem?.cancel()
+    }
+
+    private func setupSearchController() {
         searchController.searchResultsUpdater = self
         searchController.obscuresBackgroundDuringPresentation = false
-        
+        searchController.searchBar.placeholder = "搜索经书"
         tableView.tableHeaderView = searchController.searchBar
-        
         definesPresentationContext = true
     }
-    
-    
-    
-    // MARK: Search
-    
+
     func updateSearchResults(for searchController: UISearchController) {
-        let searchBar = searchController.searchBar
-        
-        if searchBar.text != nil && searchBar.text!.count >= 1{
-            items = DatabaseAccessor.searchByTitle(title: searchBar.text!)
-        }else{
-            items = DatabaseAccessor.byBulei(parentId: parentId)
-        }
-        tableView.reloadData()
+        reloadItems(searchText: searchController.searchBar.text, debounce: true)
     }
-    //MARK: swipe to favorite
-    
-    override func tableView(_ tableView: UITableView, editActionsForRowAt indexPath: IndexPath) -> [UITableViewRowAction]? {
-        
-        var actions: [UITableViewRowAction] = []
-        let item = items[indexPath.row]
-        var favorited: Bool = false
-        
-        if let book = item as? Books {
-            if book.favorite == 1 {
-                favorited = true
-            }
-        }else if let category = item as? Categories {
-            if category.favorite == 1 {
-                favorited = true
-            }
-        }
-        
-        if favorited {
-            let defavoriteAction =  UITableViewRowAction(style: .normal,
-              title: "取消收藏") { (action, indexPath) in
-                let item = self.items[indexPath.row]
-                DatabaseAccessor.deFavorite(object: item)
-                if let book = item as? Books {
-                    book.favorite = 0
-                    self.items[indexPath.row] = book
-                }else if let category = item as? Categories {
-                    category.favorite = 0
-                    self.items[indexPath.row] = category
+
+    private func reloadItems(searchText: String?, debounce: Bool) {
+        pendingSearchWorkItem?.cancel()
+        searchRequestId += 1
+
+        let requestId = searchRequestId
+        let keyword = searchText?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parentId = self.parentId
+
+        let workItem = DispatchWorkItem { [weak self] in
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                guard let self = self else { return }
+
+                let loadedItems: [AnyObject]
+                if let keyword = keyword, !keyword.isEmpty {
+                    loadedItems = DatabaseAccessor.searchByTitle(title: keyword)
+                } else {
+                    loadedItems = self.loadItems(parentId: parentId)
+                }
+
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self, self.searchRequestId == requestId else {
+                        return
+                    }
+
+                    self.items = loadedItems
+                    self.tableView.reloadData()
                 }
             }
-            actions.append(defavoriteAction)
-        }else{
-            let favoriteAction =  UITableViewRowAction(style: .normal,
-              title: "收藏") { (action, indexPath) in
-                let item = self.items[indexPath.row]
-                DatabaseAccessor.setFavorite(object: item)
-                
-                if let book = item as? Books {
-                    book.favorite = 1
-                    self.items[indexPath.row] = book
-                }else if let category = item as? Categories {
-                    category.favorite = 1
-                    self.items[indexPath.row] = category
-                }
-            }
-            actions.append(favoriteAction)
         }
-        
-        return actions
+
+        pendingSearchWorkItem = workItem
+        if debounce {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: workItem)
+        } else {
+            workItem.perform()
+        }
     }
-    
-    // MARK: - Table view data source
-    
+
+    override func tableView(_ tableView: UITableView,
+                            trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
+        guard items.indices.contains(indexPath.row) else {
+            return nil
+        }
+
+        let favorited = isFavorited(items[indexPath.row])
+        let title = favorited ? "取消收藏" : "收藏"
+        let action = UIContextualAction(style: .normal, title: title) { [weak self] _, _, completion in
+            guard let self = self, self.items.indices.contains(indexPath.row) else {
+                completion(false)
+                return
+            }
+
+            let item = self.items[indexPath.row]
+            let success = favorited ? DatabaseAccessor.deFavorite(object: item) : DatabaseAccessor.setFavorite(object: item)
+            if success {
+                self.updateFavoriteFlag(at: indexPath, favorited: !favorited)
+            } else {
+                ShowMessage(controller: self, msg: "收藏状态更新失败", title: "错误")
+            }
+            completion(success)
+        }
+
+        action.backgroundColor = favorited ? UIColor.red : UIColor.orange
+        let configuration = UISwipeActionsConfiguration(actions: [action])
+        configuration.performsFirstActionWithFullSwipe = false
+        return configuration
+    }
+
     override func numberOfSections(in tableView: UITableView) -> Int {
-        // #warning Incomplete implementation, return the number of sections
         return 1
     }
-    
+
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        // #warning Incomplete implementation, return the number of rows
         return items.count
     }
-    
-    
+
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "mainCell", for: indexPath)
-        
+
         if let book = items[indexPath.row] as? Books {
             cell.textLabel?.text = book.title
-            cell.accessoryType = .none;
-        }else if let category = items[indexPath.row] as? Categories{
+            cell.accessoryType = .none
+        } else if let category = items[indexPath.row] as? Categories {
             cell.textLabel?.text = category.title
-            cell.accessoryType = .disclosureIndicator;
+            cell.accessoryType = .disclosureIndicator
         }
-        
+
         return cell
     }
-    
+
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+
         let item = items[indexPath.row]
         if let book = item as? Books {
             openEpubReader(book: book)
-            
-        }else if let category = item as? Categories {
+        } else if let category = item as? Categories {
             let storyboard = UIStoryboard(name: "Main", bundle: nil)
-            guard let controller = storyboard.instantiateViewController(withIdentifier: "mainTableView") as? MainTableViewController
-                else { fatalError("error with navigation category") }
+            guard let controller = storyboard.instantiateViewController(withIdentifier: childStoryboardIdentifier) as? BookListTableViewController else {
+                ShowMessage(controller: self, msg: "无法打开分类", title: "错误")
+                return
+            }
             controller.parentId = category.id
             controller.title = category.title
             navigationController?.pushViewController(controller, animated: true)
         }
-        
-        
     }
-    
-    /*
-     // Override to support conditional editing of the table view.
-     override func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool {
-     // Return false if you do not want the specified item to be editable.
-     return true
-     }
-     */
-    
-    /*
-     // Override to support editing the table view.
-     override func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle, forRowAt indexPath: IndexPath) {
-     if editingStyle == .delete {
-     // Delete the row from the data source
-     tableView.deleteRows(at: [indexPath], with: .fade)
-     } else if editingStyle == .insert {
-     // Create a new instance of the appropriate class, insert it into the array, and add a new row to the table view
-     }
-     }
-     */
-    
-    /*
-     // Override to support rearranging the table view.
-     override func tableView(_ tableView: UITableView, moveRowAt fromIndexPath: IndexPath, to: IndexPath) {
-     
-     }
-     */
-    
-    /*
-     // Override to support conditional rearranging of the table view.
-     override func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool {
-     // Return false if you do not want the item to be re-orderable.
-     return true
-     }
-     */
-    
-    /*
-     // MARK: - Navigation
-     
-     // In a storyboard-based application, you will often want to do a little preparation before navigation
-     override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
-     // Get the new view controller using segue.destination.
-     // Pass the selected object to the new view controller.
-     }
-     */
-    
+
+    private func isFavorited(_ item: AnyObject) -> Bool {
+        if let book = item as? Books {
+            return book.favorite == 1
+        } else if let category = item as? Categories {
+            return category.favorite == 1
+        }
+        return false
+    }
+
+    private func updateFavoriteFlag(at indexPath: IndexPath, favorited: Bool) {
+        guard items.indices.contains(indexPath.row) else {
+            return
+        }
+
+        let value: Int64 = favorited ? 1 : 0
+        if let book = items[indexPath.row] as? Books {
+            book.favorite = value
+        } else if let category = items[indexPath.row] as? Categories {
+            category.favorite = value
+        }
+
+        tableView.reloadRows(at: [indexPath], with: .automatic)
+    }
+}
+
+class MainTableViewController: BookListTableViewController {
+    override var rootCategoryId: Int64? {
+        return DatabaseAccessor.buleiRootId()
+    }
+
+    override var childStoryboardIdentifier: String {
+        return "mainTableView"
+    }
+
+    override func loadItems(parentId: Int64?) -> [AnyObject] {
+        return DatabaseAccessor.byBulei(parentId: parentId)
+    }
 }

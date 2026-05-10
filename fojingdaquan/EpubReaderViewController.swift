@@ -137,15 +137,17 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
 
         navigationItem.rightBarButtonItem = UIBarButtonItem(title: "目录", style: .plain, target: self, action: #selector(showContents))
 
+        let safeArea = view.safeAreaLayoutGuide
+
         NSLayoutConstraint.activate([
-            webView.topAnchor.constraint(equalTo: topLayoutGuide.bottomAnchor),
+            webView.topAnchor.constraint(equalTo: safeArea.topAnchor),
             webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             webView.bottomAnchor.constraint(equalTo: bottomToolbar.topAnchor),
 
             bottomToolbar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             bottomToolbar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            bottomToolbar.bottomAnchor.constraint(equalTo: bottomLayoutGuide.topAnchor),
+            bottomToolbar.bottomAnchor.constraint(equalTo: safeArea.bottomAnchor),
             bottomToolbar.heightAnchor.constraint(equalToConstant: 58),
 
             stackView.topAnchor.constraint(equalTo: bottomToolbar.topAnchor, constant: 8),
@@ -551,6 +553,17 @@ private final class EpubContentsViewController: UITableViewController {
         super.viewDidLoad()
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "chapterCell")
         navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(close))
+        updateColors()
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+
+        if #available(iOS 13.0, *),
+           previousTraitCollection?.hasDifferentColorAppearance(comparedTo: traitCollection) == true {
+            updateColors()
+            tableView.reloadData()
+        }
     }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
@@ -561,6 +574,8 @@ private final class EpubContentsViewController: UITableViewController {
         let cell = tableView.dequeueReusableCell(withIdentifier: "chapterCell", for: indexPath)
         cell.textLabel?.text = chapters[indexPath.row].title
         cell.textLabel?.numberOfLines = 2
+        cell.textLabel?.textColor = isDarkModeEnabled ? UIColor(red: 0.82, green: 0.82, blue: 0.82, alpha: 1) : UIColor(red: 0.12, green: 0.14, blue: 0.16, alpha: 1)
+        cell.backgroundColor = isDarkModeEnabled ? UIColor(red: 0.13, green: 0.13, blue: 0.14, alpha: 1) : UIColor(red: 0.98, green: 0.96, blue: 0.90, alpha: 1)
         cell.accessoryType = indexPath.row == currentIndex ? .checkmark : .none
         return cell
     }
@@ -572,6 +587,18 @@ private final class EpubContentsViewController: UITableViewController {
 
     @objc private func close() {
         dismiss(animated: true, completion: nil)
+    }
+
+    private func updateColors() {
+        tableView.backgroundColor = isDarkModeEnabled ? UIColor(red: 0.13, green: 0.13, blue: 0.14, alpha: 1) : UIColor(red: 0.98, green: 0.96, blue: 0.90, alpha: 1)
+        navigationController?.navigationBar.barStyle = isDarkModeEnabled ? .black : .default
+    }
+
+    private var isDarkModeEnabled: Bool {
+        if #available(iOS 13.0, *) {
+            return traitCollection.userInterfaceStyle == .dark
+        }
+        return false
     }
 }
 
