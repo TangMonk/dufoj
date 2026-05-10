@@ -633,6 +633,10 @@ private final class EpubParser {
         let tocTitles = parseTocTitles(package: package, baseURL: baseURL)
 
         let chapters = package.spine.compactMap { idref -> EpubChapter? in
+            guard !isSkippedChapterID(idref) else {
+                return nil
+            }
+
             guard let item = package.manifest[idref],
                   item.mediaType.contains("xhtml") || item.mediaType.contains("html") else {
                 return nil
@@ -649,6 +653,11 @@ private final class EpubParser {
         }
 
         return EpubBook(title: package.title, rootURL: destinationURL, chapters: chapters)
+    }
+
+    private static func isSkippedChapterID(_ idref: String) -> Bool {
+        let skippedChapterIDs: Set<String> = ["front", "back"]
+        return skippedChapterIDs.contains(idref.lowercased())
     }
 
     private static func extractionURL(for epubURL: URL) throws -> URL {
