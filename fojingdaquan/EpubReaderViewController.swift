@@ -241,7 +241,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
     }
 
     private var readerBackgroundHex: String {
-        return isDarkModeEnabled ? "#222224" : "#fffdf8"
+        return isDarkModeEnabled ? "#222224" : "#F6F0E2"
     }
 
     private var readerTextHex: String {
@@ -249,7 +249,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
     }
 
     private var readerBackgroundColor: UIColor {
-        return isDarkModeEnabled ? UIColor(red: 34.0 / 255.0, green: 34.0 / 255.0, blue: 36.0 / 255.0, alpha: 1) : UIColor(red: 1, green: 253.0 / 255.0, blue: 248.0 / 255.0, alpha: 1)
+        return isDarkModeEnabled ? UIColor(red: 34.0 / 255.0, green: 34.0 / 255.0, blue: 36.0 / 255.0, alpha: 1) : UIColor(red: 246.0 / 255.0, green: 240.0 / 255.0, blue: 226.0 / 255.0, alpha: 1)
     }
 
     private func readerCSS() -> String {
