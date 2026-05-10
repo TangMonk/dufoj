@@ -49,6 +49,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
     private let bottomToolbar = UIView()
     private let progressLabel = UILabel()
     private let loadingView = UIActivityIndicatorView(style: .gray)
+    private var toolbarButtons: [UIButton] = []
 
     private var book: EpubBook?
     private var currentChapterIndex = 0
@@ -73,12 +74,23 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
         super.viewDidLoad()
 
         title = suggestedTitle
-        view.backgroundColor = UIColor.white
         setupWebView()
         setupToolbar()
         setupLoadingView()
+        updateChromeColors()
         observeReadingPositionEvents()
         loadEpub()
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+
+        if #available(iOS 13.0, *),
+           previousTraitCollection?.hasDifferentColorAppearance(comparedTo: traitCollection) == true {
+            updateChromeColors()
+            installReaderStyleUserScript()
+            applyReaderStyleToCurrentDocument()
+        }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -95,14 +107,12 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
         webView = WKWebView(frame: .zero, configuration: configuration)
         installReaderStyleUserScript()
         webView.navigationDelegate = self
-        webView.backgroundColor = UIColor.white
         webView.isOpaque = false
         webView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(webView)
     }
 
     private func setupToolbar() {
-        bottomToolbar.backgroundColor = UIColor(white: 0.98, alpha: 0.96)
         bottomToolbar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(bottomToolbar)
 
@@ -121,7 +131,6 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
         bottomToolbar.addSubview(stackView)
 
         progressLabel.textAlignment = .center
-        progressLabel.textColor = UIColor.lightGray
         progressLabel.font = UIFont.systemFont(ofSize: 17, weight: .semibold)
         progressLabel.adjustsFontSizeToFitWidth = true
         progressLabel.minimumScaleFactor = 0.7
@@ -154,12 +163,24 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
         button.titleLabel?.minimumScaleFactor = 0.7
         button.titleLabel?.lineBreakMode = .byClipping
         button.contentEdgeInsets = UIEdgeInsets(top: 0, left: 2, bottom: 0, right: 2)
-        button.backgroundColor = UIColor(white: 1.0, alpha: 0.92)
         button.layer.cornerRadius = 8
         button.layer.borderWidth = 0.5
-        button.layer.borderColor = UIColor(white: 0.88, alpha: 1).cgColor
         button.addTarget(self, action: action, for: .touchUpInside)
+        toolbarButtons.append(button)
         return button
+    }
+
+    private func updateChromeColors() {
+        view.backgroundColor = readerBackgroundColor
+        webView?.backgroundColor = readerBackgroundColor
+        bottomToolbar.backgroundColor = isDarkModeEnabled ? UIColor(red: 0.12, green: 0.12, blue: 0.13, alpha: 0.96) : UIColor(white: 0.98, alpha: 0.96)
+        progressLabel.textColor = isDarkModeEnabled ? UIColor(red: 0.55, green: 0.55, blue: 0.57, alpha: 1) : UIColor.lightGray
+
+        for button in toolbarButtons {
+            button.backgroundColor = isDarkModeEnabled ? UIColor(red: 0.18, green: 0.18, blue: 0.19, alpha: 0.92) : UIColor(white: 1.0, alpha: 0.92)
+            button.layer.borderColor = (isDarkModeEnabled ? UIColor(red: 0.28, green: 0.28, blue: 0.30, alpha: 1) : UIColor(white: 0.88, alpha: 1)).cgColor
+            button.setTitleColor(isDarkModeEnabled ? UIColor(red: 0.82, green: 0.82, blue: 0.82, alpha: 1) : view.tintColor, for: .normal)
+        }
     }
 
     private func setupLoadingView() {
@@ -212,28 +233,51 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
         webView.loadFileURL(chapter.url, allowingReadAccessTo: book.rootURL)
     }
 
+    private var isDarkModeEnabled: Bool {
+        if #available(iOS 13.0, *) {
+            return traitCollection.userInterfaceStyle == .dark
+        }
+        return false
+    }
+
+    private var readerBackgroundHex: String {
+        return isDarkModeEnabled ? "#222224" : "#fffdf8"
+    }
+
+    private var readerTextHex: String {
+        return isDarkModeEnabled ? "#D1D1D1" : "#1f2328"
+    }
+
+    private var readerBackgroundColor: UIColor {
+        return isDarkModeEnabled ? UIColor(red: 34.0 / 255.0, green: 34.0 / 255.0, blue: 36.0 / 255.0, alpha: 1) : UIColor(red: 1, green: 253.0 / 255.0, blue: 248.0 / 255.0, alpha: 1)
+    }
+
     private func readerCSS() -> String {
         let percent = Int(fontScale * 100)
+        let contentTextColorRule = isDarkModeEnabled ? "color: \(readerTextHex) !important;" : ""
         return """
         html {
           -webkit-text-size-adjust: \(percent)% !important;
           margin: 0 !important;
           padding: 0 !important;
+          background: \(readerBackgroundHex) !important;
+          color-scheme: \(isDarkModeEnabled ? "dark" : "light") !important;
         }
         body {
           box-sizing: border-box !important;
           max-width: none !important;
           margin: 0 auto !important;
           padding: 14px 44px 30px !important;
-          color: #1f2328 !important;
-          background: #fffdf8 !important;
+          color: \(readerTextHex) !important;
+          background: \(readerBackgroundHex) !important;
           line-height: 1.9 !important;
           font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif !important;
         }
-        p, div, li, section, article {
+        p, div, li, section, article, span {
           line-height: 1.9 !important;
           margin-left: 0 !important;
           margin-right: 0 !important;
+          \(contentTextColorRule)
         }
         div.lg {
           visibility: hidden !important;
