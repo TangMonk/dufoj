@@ -243,7 +243,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
     private static let deepSeekAPIURL = "https://api.deepseek.com/chat/completions"
     private static let deepSeekAPIKey = "sk-efa5fbb8c7574ac8a56384c7452a9a24"
     private static let deepSeekModel = "deepseek-v4-pro"
-    private static let deepSeekSystemPrompt = "你是一个专业的佛经翻译人员，把文言文佛经翻译成白话文，采用直译为主、文白相间的风格, 既保持经典庄严感又确保现代人能理解"
+    private static let deepSeekSystemPrompt = "你是一个专业的佛经翻译人员，把文言文佛经翻译成白话文，采用直译为主、文白相间的风格, 既保持经典庄严感又确保现代人能理解。直接输出译文，不要解释过程。"
 
     private let epubURL: URL
     private let suggestedTitle: String
@@ -741,8 +741,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
         requestAIExplanationStream(for: selectedText,
                                    onText: { [weak self, weak alert, weak activityIndicator] text in
                                        guard let self = self,
-                                             let alert = alert,
-                                             let activityIndicator = activityIndicator else {
+                                             let alert = alert else {
                                            return
                                        }
                                        self.enqueueAIExplanationText(text, in: alert, loadingView: activityIndicator)
