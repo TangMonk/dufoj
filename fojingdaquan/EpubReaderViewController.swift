@@ -74,6 +74,52 @@ private struct DeepSeekChatStreamResponse: Codable {
     let error: DeepSeekChatResponse.APIError?
 }
 
+private struct EpubAISettings {
+    private static let apiKeyKey = "dufoj.epubReader.ai.deepSeekAPIKey"
+    private static let streamingKey = "dufoj.epubReader.ai.streaming"
+    private static let fontScaleKey = "dufoj.epubReader.ai.fontScale"
+    private static let inlineButtonsKey = "dufoj.epubReader.ai.inlineButtons"
+
+    static let defaultAPIKey = "sk-efa5fbb8c7574ac8a56384c7452a9a24"
+    static let minimumFontScale: CGFloat = 0.8
+    static let maximumFontScale: CGFloat = 1.8
+    static let fontScaleStep: CGFloat = 0.1
+
+    var apiKey: String
+    var usesStreaming: Bool
+    var fontScale: CGFloat
+    var showsInlineButtons: Bool
+
+    var effectiveAPIKey: String {
+        let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedKey.isEmpty ? EpubAISettings.defaultAPIKey : trimmedKey
+    }
+
+    static func load() -> EpubAISettings {
+        let defaults = UserDefaults.standard
+        let storedScale = defaults.object(forKey: fontScaleKey) as? Double
+        let storedStreaming = defaults.object(forKey: streamingKey) as? Bool
+        let storedInlineButtons = defaults.object(forKey: inlineButtonsKey) as? Bool
+
+        return EpubAISettings(apiKey: defaults.string(forKey: apiKeyKey) ?? "",
+                              usesStreaming: storedStreaming ?? true,
+                              fontScale: clampedFontScale(CGFloat(storedScale ?? 1.0)),
+                              showsInlineButtons: storedInlineButtons ?? false)
+    }
+
+    func save() {
+        let defaults = UserDefaults.standard
+        defaults.set(apiKey.trimmingCharacters(in: .whitespacesAndNewlines), forKey: EpubAISettings.apiKeyKey)
+        defaults.set(usesStreaming, forKey: EpubAISettings.streamingKey)
+        defaults.set(Double(EpubAISettings.clampedFontScale(fontScale)), forKey: EpubAISettings.fontScaleKey)
+        defaults.set(showsInlineButtons, forKey: EpubAISettings.inlineButtonsKey)
+    }
+
+    static func clampedFontScale(_ value: CGFloat) -> CGFloat {
+        return min(maximumFontScale, max(minimumFontScale, value))
+    }
+}
+
 private enum EpubReaderError: Error {
     case unzipFailed
     case missingContainer
@@ -235,13 +281,206 @@ private final class DeepSeekStreamingClient: NSObject, URLSessionDataDelegate {
     }
 }
 
-final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
+private final class EpubAISettingsViewController: UIViewController, UITextFieldDelegate {
+    private var settings: EpubAISettings
+    private let onSave: (EpubAISettings) -> Void
+    private let apiKeyField = UITextField()
+    private let modeControl = UISegmentedControl(items: ["流式", "普通"])
+    private let fontSizeLabel = UILabel()
+    private let inlineButtonSwitch = UISwitch()
+
+    init(settings: EpubAISettings, onSave: @escaping (EpubAISettings) -> Void) {
+        self.settings = settings
+        self.onSave = onSave
+        super.init(nibName: nil, bundle: nil)
+        modalPresentationStyle = .overFullScreen
+        modalTransitionStyle = .crossDissolve
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        setupViews()
+        updateFontSizeLabel()
+    }
+
+    private func setupViews() {
+        view.backgroundColor = UIColor(white: 0, alpha: 0.45)
+
+        let cardView = UIView()
+        cardView.translatesAutoresizingMaskIntoConstraints = false
+        cardView.backgroundColor = UIColor(white: 0.98, alpha: 1)
+        cardView.layer.cornerRadius = 10
+        cardView.layer.masksToBounds = true
+        view.addSubview(cardView)
+
+        let titleLabel = UILabel()
+        titleLabel.text = "AI设置"
+        titleLabel.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
+        titleLabel.textAlignment = .center
+
+        let closeButton = UIButton(type: .system)
+        closeButton.setTitle("关闭", for: .normal)
+        closeButton.addTarget(self, action: #selector(closeSettings), for: .touchUpInside)
+
+        let headerView = UIView()
+        headerView.translatesAutoresizingMaskIntoConstraints = false
+        cardView.addSubview(headerView)
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        headerView.addSubview(titleLabel)
+        headerView.addSubview(closeButton)
+
+        let stackView = UIStackView()
+        stackView.axis = .vertical
+        stackView.spacing = 16
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        cardView.addSubview(stackView)
+
+        apiKeyField.borderStyle = .roundedRect
+        apiKeyField.placeholder = "DeepSeek API Key"
+        apiKeyField.text = settings.apiKey
+        apiKeyField.clearButtonMode = .whileEditing
+        apiKeyField.autocapitalizationType = .none
+        apiKeyField.autocorrectionType = .no
+        apiKeyField.isSecureTextEntry = true
+        apiKeyField.delegate = self
+
+        modeControl.selectedSegmentIndex = settings.usesStreaming ? 0 : 1
+
+        let fontRow = UIStackView()
+        fontRow.axis = .horizontal
+        fontRow.alignment = .center
+        fontRow.spacing = 10
+
+        let decreaseButton = UIButton(type: .system)
+        decreaseButton.setTitle("A-", for: .normal)
+        decreaseButton.titleLabel?.font = UIFont.systemFont(ofSize: 17, weight: .semibold)
+        decreaseButton.addTarget(self, action: #selector(decreaseFontSize), for: .touchUpInside)
+
+        let increaseButton = UIButton(type: .system)
+        increaseButton.setTitle("A+", for: .normal)
+        increaseButton.titleLabel?.font = UIFont.systemFont(ofSize: 17, weight: .semibold)
+        increaseButton.addTarget(self, action: #selector(increaseFontSize), for: .touchUpInside)
+
+        fontSizeLabel.textAlignment = .center
+        fontSizeLabel.font = UIFont.systemFont(ofSize: 16)
+        fontSizeLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        fontRow.addArrangedSubview(decreaseButton)
+        fontRow.addArrangedSubview(fontSizeLabel)
+        fontRow.addArrangedSubview(increaseButton)
+
+        inlineButtonSwitch.isOn = settings.showsInlineButtons
+        let inlineRow = makeSettingRow(title: "段落后显示AI按钮", control: inlineButtonSwitch)
+
+        let saveButton = UIButton(type: .system)
+        saveButton.setTitle("保存", for: .normal)
+        saveButton.titleLabel?.font = UIFont.systemFont(ofSize: 17, weight: .semibold)
+        saveButton.addTarget(self, action: #selector(saveSettings), for: .touchUpInside)
+
+        stackView.addArrangedSubview(makeTitleValueView(title: "DeepSeek API Key", valueView: apiKeyField))
+        stackView.addArrangedSubview(makeTitleValueView(title: "吐字方式", valueView: modeControl))
+        stackView.addArrangedSubview(makeTitleValueView(title: "AI解释字体", valueView: fontRow))
+        stackView.addArrangedSubview(inlineRow)
+        stackView.addArrangedSubview(saveButton)
+
+        NSLayoutConstraint.activate([
+            cardView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            cardView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            cardView.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 18),
+            cardView.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -18),
+            cardView.widthAnchor.constraint(lessThanOrEqualToConstant: 420),
+
+            headerView.topAnchor.constraint(equalTo: cardView.topAnchor),
+            headerView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor),
+            headerView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor),
+            headerView.heightAnchor.constraint(equalToConstant: 48),
+
+            titleLabel.centerXAnchor.constraint(equalTo: headerView.centerXAnchor),
+            titleLabel.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
+            closeButton.trailingAnchor.constraint(equalTo: headerView.trailingAnchor, constant: -14),
+            closeButton.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
+
+            stackView.topAnchor.constraint(equalTo: headerView.bottomAnchor, constant: 12),
+            stackView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 18),
+            stackView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -18),
+            stackView.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -18)
+        ])
+    }
+
+    private func makeTitleValueView(title: String, valueView: UIView) -> UIView {
+        let stackView = UIStackView()
+        stackView.axis = .vertical
+        stackView.spacing = 6
+
+        let titleLabel = UILabel()
+        titleLabel.text = title
+        titleLabel.font = UIFont.systemFont(ofSize: 14, weight: .medium)
+        titleLabel.textColor = UIColor.darkGray
+
+        stackView.addArrangedSubview(titleLabel)
+        stackView.addArrangedSubview(valueView)
+        return stackView
+    }
+
+    private func makeSettingRow(title: String, control: UIView) -> UIView {
+        let row = UIStackView()
+        row.axis = .horizontal
+        row.alignment = .center
+        row.spacing = 12
+
+        let titleLabel = UILabel()
+        titleLabel.text = title
+        titleLabel.font = UIFont.systemFont(ofSize: 16)
+        titleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        row.addArrangedSubview(titleLabel)
+        row.addArrangedSubview(control)
+        return row
+    }
+
+    private func updateFontSizeLabel() {
+        fontSizeLabel.text = "\(Int(EpubAISettings.clampedFontScale(settings.fontScale) * 100))%"
+    }
+
+    @objc private func decreaseFontSize() {
+        settings.fontScale = EpubAISettings.clampedFontScale(settings.fontScale - EpubAISettings.fontScaleStep)
+        updateFontSizeLabel()
+    }
+
+    @objc private func increaseFontSize() {
+        settings.fontScale = EpubAISettings.clampedFontScale(settings.fontScale + EpubAISettings.fontScaleStep)
+        updateFontSizeLabel()
+    }
+
+    @objc private func closeSettings() {
+        dismiss(animated: true, completion: nil)
+    }
+
+    @objc private func saveSettings() {
+        settings.apiKey = apiKeyField.text ?? ""
+        settings.usesStreaming = modeControl.selectedSegmentIndex == 0
+        settings.showsInlineButtons = inlineButtonSwitch.isOn
+        settings.save()
+        onSave(settings)
+        dismiss(animated: true, completion: nil)
+    }
+
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        textField.resignFirstResponder()
+        return true
+    }
+}
+
+final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHandler {
     private static let defaultFontScale: CGFloat = 3.0
     private static let fontScaleStep: CGFloat = 0.5
     private static let minimumFontScale: CGFloat = 0.5
     private static let maximumFontScale: CGFloat = 6.0
     private static let deepSeekAPIURL = "https://api.deepseek.com/chat/completions"
-    private static let deepSeekAPIKey = "sk-efa5fbb8c7574ac8a56384c7452a9a24"
     private static let deepSeekModel = "deepseek-v4-pro"
     private static let deepSeekSystemPrompt = "你是一个专业的佛经翻译人员，把文言文佛经翻译成白话文，采用直译为主、文白相间的风格, 既保持经典庄严感又确保现代人能理解。直接输出译文，不要解释过程。"
 
@@ -268,6 +507,11 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
     private var aiExplanationDisplayedText = ""
     private var aiExplanationDidFinishStreaming = false
     private var aiExplanationCopyActionAdded = false
+    private var aiExplanationOverlayView: UIView?
+    private var aiExplanationCardView: UIView?
+    private var aiExplanationTextView: UITextView?
+    private var aiExplanationLoadingView: UIActivityIndicatorView?
+    private var aiExplanationCopyButton: UIButton?
     private var readingPositionKey: String {
         return "dufoj.epubReader.position.\(epubURL.path)"
     }
@@ -328,11 +572,13 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
         activeAIExplanationTask?.cancel()
         activeAIExplanationClient?.cancel()
         aiExplanationDisplayTimer?.invalidate()
+        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "dufojAIExplain")
         NotificationCenter.default.removeObserver(self)
     }
 
     private func setupWebView() {
         let configuration = WKWebViewConfiguration()
+        configuration.userContentController.add(self, name: "dufojAIExplain")
         webView = WKWebView(frame: .zero, configuration: configuration)
         installReaderStyleUserScript()
         webView.navigationDelegate = self
@@ -532,6 +778,29 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
           text-decoration-color: #2f9e44 !important;
           text-underline-offset: 0.16em !important;
         }
+        .dufoj-ai-inline-wrapper {
+          display: flex !important;
+          justify-content: flex-end !important;
+          margin: -0.55em 0 0.7em !important;
+        }
+        .dufoj-ai-inline-button {
+          display: inline-flex !important;
+          align-items: center !important;
+          gap: 4px !important;
+          border: 1px solid rgba(10, 132, 255, 0.36) !important;
+          border-radius: 14px !important;
+          padding: 3px 8px !important;
+          background: \(isDarkModeEnabled ? "rgba(45, 92, 160, 0.34)" : "rgba(255, 255, 255, 0.72)") !important;
+          color: #0a84ff !important;
+          font: 500 12px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif !important;
+          line-height: 1.2 !important;
+          -webkit-text-size-adjust: none !important;
+        }
+        .dufoj-ai-inline-button svg {
+          width: 14px !important;
+          height: 14px !important;
+          display: block !important;
+        }
         """
     }
 
@@ -612,6 +881,88 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
     private func applyReaderStyleToCurrentDocument() {
         webView.evaluateJavaScript(readerStyleScript(), completionHandler: nil)
         webView.evaluateJavaScript(readerPoemScript(), completionHandler: nil)
+        applyAIInlineButtonsToCurrentDocument()
+    }
+
+    private func applyAIInlineButtonsToCurrentDocument() {
+        let script = aiInlineButtonScript(enabled: EpubAISettings.load().showsInlineButtons)
+        webView.evaluateJavaScript(script) { _, error in
+            if let error = error {
+                LogDebug(log: "Apply AI inline buttons failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func aiInlineButtonScript(enabled: Bool) -> String {
+        let enabledLiteral = enabled ? "true" : "false"
+        return """
+        (function() {
+          var enabled = \(enabledLiteral);
+
+          function removeExistingButtons() {
+            Array.prototype.slice.call(document.querySelectorAll('.dufoj-ai-inline-wrapper')).forEach(function(node) {
+              if (node.parentNode) {
+                node.parentNode.removeChild(node);
+              }
+            });
+          }
+
+          removeExistingButtons();
+          if (!enabled || !window.webkit || !window.webkit.messageHandlers || !window.webkit.messageHandlers.dufojAIExplain) {
+            return true;
+          }
+
+          function candidateBlocks() {
+            return Array.prototype.slice.call(document.querySelectorAll('p, div.lg')).filter(function(block) {
+              if (!block || block.closest('.dufoj-ai-inline-wrapper')) {
+                return false;
+              }
+              var text = (block.innerText || block.textContent || '').replace(/[\\s\\u3000]+/g, '');
+              return text.length >= 8;
+            });
+          }
+
+          function buttonHTML() {
+            return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l1.7 5.2 5.4 1.9-5.4 1.9-1.7 5.2-1.7-5.2-5.4-1.9 5.4-1.9L12 2.6z" fill="#0a84ff"/><path d="M18.8 13.8l.8 2.3 2.3.8-2.3.8-.8 2.3-.8-2.3-2.3-.8 2.3-.8.8-2.3z" fill="#7c3aed"/></svg><span>AI</span>';
+          }
+
+          candidateBlocks().forEach(function(block) {
+            var wrapper = document.createElement('span');
+            wrapper.className = 'dufoj-ai-inline-wrapper';
+
+            var button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'dufoj-ai-inline-button';
+            button.innerHTML = buttonHTML();
+            button.addEventListener('click', function(event) {
+              event.preventDefault();
+              event.stopPropagation();
+              var text = (block.innerText || block.textContent || '').replace(/^\\s+|\\s+$/g, '');
+              window.webkit.messageHandlers.dufojAIExplain.postMessage({ text: text });
+            });
+
+            wrapper.appendChild(button);
+            if (block.nextSibling) {
+              block.parentNode.insertBefore(wrapper, block.nextSibling);
+            } else {
+              block.parentNode.appendChild(wrapper);
+            }
+          });
+
+          return true;
+        })();
+        """
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == "dufojAIExplain",
+              let dictionary = message.body as? [String: Any],
+              let text = dictionary["text"] as? String,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return
+        }
+
+        showAIExplanation(for: text)
     }
 
     private func installExcerptMenuItem() {
@@ -720,56 +1071,147 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
 
     private func showAIExplanation(for selectedText: String) {
         resetAIExplanationState()
+        showAIExplanationPopup()
 
-        let alert = UIAlertController(title: "AI解释",
-                                      message: "\n\n",
-                                      preferredStyle: .alert)
-        let activityIndicator = UIActivityIndicatorView(style: .gray)
-        activityIndicator.translatesAutoresizingMaskIntoConstraints = false
-        activityIndicator.startAnimating()
-        alert.view.addSubview(activityIndicator)
-        NSLayoutConstraint.activate([
-            activityIndicator.centerXAnchor.constraint(equalTo: alert.view.centerXAnchor),
-            activityIndicator.topAnchor.constraint(equalTo: alert.view.topAnchor, constant: 58)
-        ])
-
-        alert.addAction(UIAlertAction(title: "关闭", style: .cancel) { [weak self] _ in
-            self?.resetAIExplanationState()
-        })
-        present(alert, animated: true, completion: nil)
-
-        requestAIExplanationStream(for: selectedText,
-                                   onText: { [weak self, weak alert, weak activityIndicator] text in
-                                       guard let self = self,
-                                             let alert = alert else {
-                                           return
-                                       }
-                                       self.enqueueAIExplanationText(text, in: alert, loadingView: activityIndicator)
-                                   },
-                                   completion: { [weak self, weak alert, weak activityIndicator] result in
-            guard let self = self, let alert = alert else { return }
-            guard self.presentedViewController === alert else { return }
-
-            switch result {
-            case .success:
-                self.aiExplanationDidFinishStreaming = true
-                self.finishAIExplanationIfReady(in: alert)
-            case .failure(let error):
-                if let deepSeekError = error as? DeepSeekExplanationError,
-                   case .cancelled = deepSeekError {
-                    return
-                }
-                activityIndicator?.stopAnimating()
-                activityIndicator?.removeFromSuperview()
-                if self.aiExplanationDisplayedText.isEmpty {
-                    alert.message = error.localizedDescription
-                } else {
-                    self.enqueueAIExplanationText("\n\n\(error.localizedDescription)", in: alert, loadingView: nil)
-                    self.aiExplanationDidFinishStreaming = true
-                    self.finishAIExplanationIfReady(in: alert)
+        let settings = EpubAISettings.load()
+        if settings.usesStreaming {
+            requestAIExplanationStream(for: selectedText,
+                                       apiKey: settings.effectiveAPIKey,
+                                       onText: { [weak self] text in
+                                           self?.enqueueAIExplanationText(text)
+                                       },
+                                       completion: { [weak self] result in
+                                           self?.finishAIExplanationRequest(with: result)
+                                       })
+        } else {
+            requestAIExplanation(for: selectedText, apiKey: settings.effectiveAPIKey) { [weak self] result in
+                guard let self = self else { return }
+                switch result {
+                case .success(let explanation):
+                    self.stopAIExplanationLoading()
+                    self.aiExplanationDisplayedText = explanation
+                    self.updateAIExplanationTextView()
+                    self.finishAIExplanationIfReady()
+                case .failure(let error):
+                    self.showAIExplanationError(error)
                 }
             }
-        })
+        }
+    }
+
+    private func showAIExplanationPopup() {
+        closeAIExplanationPopup(keepRequest: true)
+
+        let overlayView = UIView()
+        overlayView.translatesAutoresizingMaskIntoConstraints = false
+        overlayView.backgroundColor = UIColor(white: 0, alpha: 0.36)
+        view.addSubview(overlayView)
+
+        let cardView = UIView()
+        cardView.translatesAutoresizingMaskIntoConstraints = false
+        cardView.backgroundColor = isDarkModeEnabled ? UIColor(red: 0.16, green: 0.16, blue: 0.17, alpha: 1) : UIColor(white: 0.99, alpha: 1)
+        cardView.layer.cornerRadius = 10
+        cardView.layer.masksToBounds = true
+        overlayView.addSubview(cardView)
+
+        let headerView = UIView()
+        headerView.translatesAutoresizingMaskIntoConstraints = false
+        cardView.addSubview(headerView)
+
+        let titleLabel = UILabel()
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.text = "AI解释"
+        titleLabel.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
+        titleLabel.textAlignment = .center
+        titleLabel.textColor = isDarkModeEnabled ? UIColor(white: 0.92, alpha: 1) : UIColor(white: 0.1, alpha: 1)
+        headerView.addSubview(titleLabel)
+
+        let closeButton = UIButton(type: .system)
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        closeButton.setTitle("关闭", for: .normal)
+        closeButton.addTarget(self, action: #selector(closeAIExplanationButtonTapped), for: .touchUpInside)
+        headerView.addSubview(closeButton)
+
+        let settingsButton = UIButton(type: .system)
+        settingsButton.translatesAutoresizingMaskIntoConstraints = false
+        settingsButton.setTitle("设置", for: .normal)
+        settingsButton.addTarget(self, action: #selector(showAISettings), for: .touchUpInside)
+        headerView.addSubview(settingsButton)
+
+        let textView = UITextView()
+        textView.translatesAutoresizingMaskIntoConstraints = false
+        textView.isEditable = false
+        textView.alwaysBounceVertical = true
+        textView.textContainerInset = UIEdgeInsets(top: 10, left: 10, bottom: 10, right: 10)
+        textView.backgroundColor = isDarkModeEnabled ? UIColor(red: 0.11, green: 0.11, blue: 0.12, alpha: 1) : UIColor(white: 0.96, alpha: 1)
+        textView.textColor = isDarkModeEnabled ? UIColor(white: 0.9, alpha: 1) : UIColor(white: 0.13, alpha: 1)
+        textView.layer.cornerRadius = 8
+        textView.text = ""
+        textView.font = aiExplanationFont()
+        cardView.addSubview(textView)
+
+        let loadingView = UIActivityIndicatorView(style: .gray)
+        loadingView.translatesAutoresizingMaskIntoConstraints = false
+        loadingView.startAnimating()
+        textView.addSubview(loadingView)
+
+        let copyButton = UIButton(type: .system)
+        copyButton.translatesAutoresizingMaskIntoConstraints = false
+        copyButton.setTitle("复制解释", for: .normal)
+        copyButton.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .semibold)
+        copyButton.isHidden = true
+        copyButton.addTarget(self, action: #selector(copyAIExplanation), for: .touchUpInside)
+        cardView.addSubview(copyButton)
+
+        let safeArea = view.safeAreaLayoutGuide
+        NSLayoutConstraint.activate([
+            overlayView.topAnchor.constraint(equalTo: view.topAnchor),
+            overlayView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            overlayView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            overlayView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+
+            cardView.centerXAnchor.constraint(equalTo: overlayView.centerXAnchor),
+            cardView.centerYAnchor.constraint(equalTo: overlayView.centerYAnchor),
+            cardView.leadingAnchor.constraint(greaterThanOrEqualTo: safeArea.leadingAnchor, constant: 16),
+            cardView.trailingAnchor.constraint(lessThanOrEqualTo: safeArea.trailingAnchor, constant: -16),
+            cardView.widthAnchor.constraint(lessThanOrEqualToConstant: 520),
+            cardView.heightAnchor.constraint(equalTo: safeArea.heightAnchor, multiplier: 0.62),
+
+            headerView.topAnchor.constraint(equalTo: cardView.topAnchor),
+            headerView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor),
+            headerView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor),
+            headerView.heightAnchor.constraint(equalToConstant: 48),
+
+            titleLabel.centerXAnchor.constraint(equalTo: headerView.centerXAnchor),
+            titleLabel.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
+            closeButton.leadingAnchor.constraint(equalTo: headerView.leadingAnchor, constant: 14),
+            closeButton.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
+            settingsButton.trailingAnchor.constraint(equalTo: headerView.trailingAnchor, constant: -14),
+            settingsButton.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
+
+            textView.topAnchor.constraint(equalTo: headerView.bottomAnchor, constant: 6),
+            textView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 14),
+            textView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -14),
+            textView.bottomAnchor.constraint(equalTo: copyButton.topAnchor, constant: -8),
+
+            loadingView.centerXAnchor.constraint(equalTo: textView.centerXAnchor),
+            loadingView.centerYAnchor.constraint(equalTo: textView.centerYAnchor),
+
+            copyButton.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 14),
+            copyButton.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -14),
+            copyButton.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -12),
+            copyButton.heightAnchor.constraint(equalToConstant: 36)
+        ])
+
+        aiExplanationOverlayView = overlayView
+        aiExplanationCardView = cardView
+        aiExplanationTextView = textView
+        aiExplanationLoadingView = loadingView
+        aiExplanationCopyButton = copyButton
+    }
+
+    private func aiExplanationFont() -> UIFont {
+        return UIFont.systemFont(ofSize: 17 * EpubAISettings.load().fontScale)
     }
 
     private func resetAIExplanationState() {
@@ -783,20 +1225,23 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
         aiExplanationDisplayedText = ""
         aiExplanationDidFinishStreaming = false
         aiExplanationCopyActionAdded = false
+        aiExplanationCopyButton?.isHidden = true
+        aiExplanationTextView?.text = ""
+        aiExplanationLoadingView?.startAnimating()
     }
 
-    private func enqueueAIExplanationText(_ text: String, in alert: UIAlertController, loadingView: UIActivityIndicatorView?) {
+    private func enqueueAIExplanationText(_ text: String) {
         aiExplanationPendingCharacters.append(contentsOf: text)
-        startAIExplanationDisplayTimer(in: alert, loadingView: loadingView)
+        startAIExplanationDisplayTimer()
     }
 
-    private func startAIExplanationDisplayTimer(in alert: UIAlertController, loadingView: UIActivityIndicatorView?) {
+    private func startAIExplanationDisplayTimer() {
         guard aiExplanationDisplayTimer == nil else {
             return
         }
 
-        aiExplanationDisplayTimer = Timer.scheduledTimer(withTimeInterval: 0.035, repeats: true) { [weak self, weak alert, weak loadingView] timer in
-            guard let self = self, let alert = alert, self.presentedViewController === alert else {
+        aiExplanationDisplayTimer = Timer.scheduledTimer(withTimeInterval: 0.035, repeats: true) { [weak self] timer in
+            guard let self = self, self.aiExplanationTextView != nil else {
                 timer.invalidate()
                 return
             }
@@ -804,23 +1249,36 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
             guard !self.aiExplanationPendingCharacters.isEmpty else {
                 timer.invalidate()
                 self.aiExplanationDisplayTimer = nil
-                self.finishAIExplanationIfReady(in: alert)
+                self.finishAIExplanationIfReady()
                 return
             }
 
             if self.aiExplanationDisplayedText.isEmpty {
-                loadingView?.stopAnimating()
-                loadingView?.removeFromSuperview()
+                self.stopAIExplanationLoading()
             }
 
             let nextCharacter = self.aiExplanationPendingCharacters.removeFirst()
             self.aiExplanationDisplayedText.append(nextCharacter)
-            alert.message = self.aiExplanationDisplayedText
+            self.updateAIExplanationTextView()
         }
     }
 
-    private func finishAIExplanationIfReady(in alert: UIAlertController) {
-        guard aiExplanationDidFinishStreaming,
+    private func finishAIExplanationRequest(with result: Result<Void, Error>) {
+        switch result {
+        case .success:
+            aiExplanationDidFinishStreaming = true
+            finishAIExplanationIfReady()
+        case .failure(let error):
+            if let deepSeekError = error as? DeepSeekExplanationError,
+               case .cancelled = deepSeekError {
+                return
+            }
+            showAIExplanationError(error)
+        }
+    }
+
+    private func finishAIExplanationIfReady() {
+        guard (aiExplanationDidFinishStreaming || activeAIExplanationClient == nil),
               aiExplanationPendingCharacters.isEmpty,
               !aiExplanationDisplayedText.isEmpty,
               !aiExplanationCopyActionAdded else {
@@ -828,35 +1286,76 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
         }
 
         aiExplanationCopyActionAdded = true
-        let explanation = aiExplanationDisplayedText
-        alert.addAction(UIAlertAction(title: "复制解释", style: .default) { _ in
-            UIPasteboard.general.string = explanation
-        })
+        stopAIExplanationLoading()
+        aiExplanationCopyButton?.isHidden = false
+    }
+
+    private func updateAIExplanationTextView() {
+        guard let textView = aiExplanationTextView else { return }
+        textView.font = aiExplanationFont()
+        textView.text = aiExplanationDisplayedText
+        if !aiExplanationDisplayedText.isEmpty {
+            let bottomRange = NSRange(location: max(0, aiExplanationDisplayedText.count - 1), length: 1)
+            textView.scrollRangeToVisible(bottomRange)
+        }
+    }
+
+    private func stopAIExplanationLoading() {
+        aiExplanationLoadingView?.stopAnimating()
+        aiExplanationLoadingView?.isHidden = true
+    }
+
+    private func showAIExplanationError(_ error: Error) {
+        stopAIExplanationLoading()
+        let message = error.localizedDescription
+        if aiExplanationDisplayedText.isEmpty {
+            aiExplanationDisplayedText = message
+            updateAIExplanationTextView()
+        } else {
+            enqueueAIExplanationText("\n\n\(message)")
+            aiExplanationDidFinishStreaming = true
+            finishAIExplanationIfReady()
+        }
+    }
+
+    @objc private func copyAIExplanation() {
+        UIPasteboard.general.string = aiExplanationDisplayedText
+    }
+
+    @objc private func closeAIExplanationButtonTapped() {
+        closeAIExplanationPopup(keepRequest: false)
+    }
+
+    private func closeAIExplanationPopup(keepRequest: Bool) {
+        if !keepRequest {
+            resetAIExplanationState()
+        }
+        aiExplanationOverlayView?.removeFromSuperview()
+        aiExplanationOverlayView = nil
+        aiExplanationCardView = nil
+        aiExplanationTextView = nil
+        aiExplanationLoadingView = nil
+        aiExplanationCopyButton = nil
+    }
+
+    @objc private func showAISettings() {
+        let controller = EpubAISettingsViewController(settings: EpubAISettings.load()) { [weak self] settings in
+            guard let self = self else { return }
+            self.aiExplanationTextView?.font = self.aiExplanationFont()
+            self.applyReaderStyleToCurrentDocument()
+            if settings.showsInlineButtons {
+                self.applyAIInlineButtonsToCurrentDocument()
+            }
+        }
+        present(controller, animated: true, completion: nil)
     }
 
     private func requestAIExplanationStream(for selectedText: String,
+                                            apiKey: String,
                                             onText: @escaping (String) -> Void,
                                             completion: @escaping (Result<Void, Error>) -> Void) {
-        guard let url = URL(string: EpubReaderViewController.deepSeekAPIURL) else {
-            completion(.failure(DeepSeekExplanationError.invalidURL))
-            return
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(EpubReaderViewController.deepSeekAPIKey)", forHTTPHeaderField: "Authorization")
-
-        let body = DeepSeekChatRequest(model: EpubReaderViewController.deepSeekModel,
-                                           messages: [
-                                               DeepSeekChatMessage(role: "system", content: EpubReaderViewController.deepSeekSystemPrompt),
-                                               DeepSeekChatMessage(role: "user", content: "翻译：\(selectedText)")
-                                           ],
-                                       stream: true)
-        do {
-            request.httpBody = try JSONEncoder().encode(body)
-        } catch {
-            completion(.failure(error))
+        guard let request = makeAIExplanationRequest(selectedText: selectedText, apiKey: apiKey, stream: true) else {
+            completion(.failure(DeepSeekExplanationError.invalidResponse))
             return
         }
 
@@ -868,6 +1367,77 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
         activeAIExplanationClient = client
         client.start()
         activeAIExplanationTask = client.task
+    }
+
+    private func requestAIExplanation(for selectedText: String,
+                                      apiKey: String,
+                                      completion: @escaping (Result<String, Error>) -> Void) {
+        guard let request = makeAIExplanationRequest(selectedText: selectedText, apiKey: apiKey, stream: false) else {
+            completion(.failure(DeepSeekExplanationError.invalidResponse))
+            return
+        }
+
+        let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            let result: Result<String, Error>
+            defer {
+                DispatchQueue.main.async {
+                    self?.activeAIExplanationTask = nil
+                    completion(result)
+                }
+            }
+
+            if let error = error as NSError? {
+                if error.code == NSURLErrorCancelled {
+                    result = .failure(DeepSeekExplanationError.cancelled)
+                } else {
+                    result = .failure(DeepSeekExplanationError.requestFailed(error.localizedDescription))
+                }
+                return
+            }
+
+            guard let httpResponse = response as? HTTPURLResponse,
+                  let data = data else {
+                result = .failure(DeepSeekExplanationError.invalidResponse)
+                return
+            }
+
+            let decodedResponse = try? JSONDecoder().decode(DeepSeekChatResponse.self, from: data)
+            if !(200...299).contains(httpResponse.statusCode) {
+                let message = decodedResponse?.error?.message ?? HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode)
+                result = .failure(DeepSeekExplanationError.requestFailed(message))
+                return
+            }
+
+            guard let content = decodedResponse?.choices?.first?.message.content.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !content.isEmpty else {
+                result = .failure(DeepSeekExplanationError.emptyResponse)
+                return
+            }
+
+            result = .success(content)
+        }
+        activeAIExplanationTask = task
+        task.resume()
+    }
+
+    private func makeAIExplanationRequest(selectedText: String, apiKey: String, stream: Bool) -> URLRequest? {
+        guard let url = URL(string: EpubReaderViewController.deepSeekAPIURL) else {
+            return nil
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+
+        let body = DeepSeekChatRequest(model: EpubReaderViewController.deepSeekModel,
+                                       messages: [
+                                           DeepSeekChatMessage(role: "system", content: EpubReaderViewController.deepSeekSystemPrompt),
+                                           DeepSeekChatMessage(role: "user", content: "翻译：\(selectedText)")
+                                       ],
+                                       stream: stream)
+        request.httpBody = try? JSONEncoder().encode(body)
+        return request.httpBody == nil ? nil : request
     }
 
     private func selectionExcerptScript() -> String {
@@ -1230,6 +1800,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
         let targetExcerptID = pendingScrollToExcerptID
         pendingScrollToExcerptID = nil
         applyExcerptsToCurrentDocument(scrollToExcerptID: targetExcerptID) { [weak self] in
+            self?.applyAIInlineButtonsToCurrentDocument()
             guard targetExcerptID == nil else {
                 return
             }
