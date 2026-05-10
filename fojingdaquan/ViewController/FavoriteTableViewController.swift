@@ -34,6 +34,7 @@ class FavoriteTableViewController: UITableViewController {
             items = DatabaseAccessor.getFavorites()
         }
         
+        updateFavoriteGuideVisibility()
         tableView.reloadData()
     }
 
@@ -62,7 +63,7 @@ class FavoriteTableViewController: UITableViewController {
         favoriteGuideView.frame = CGRect(x: 0, y: 0, width: tableView.bounds.width, height: 64)
         favoriteGuideView.backgroundColor = UIColor(red: 0.96, green: 0.94, blue: 0.89, alpha: 1)
 
-        favoriteGuideLabel.text = "按住书籍往右边滑动即可收藏"
+        favoriteGuideLabel.text = "按住书籍往左边滑动即可收藏"
         favoriteGuideLabel.font = UIFont.systemFont(ofSize: 14)
         favoriteGuideLabel.textColor = UIColor(red: 0.34, green: 0.28, blue: 0.18, alpha: 1)
         favoriteGuideLabel.numberOfLines = 2
@@ -72,7 +73,7 @@ class FavoriteTableViewController: UITableViewController {
         favoriteGuideBookView.contentMode = .scaleAspectFit
         favoriteGuideBookView.translatesAutoresizingMaskIntoConstraints = false
 
-        favoriteGuideArrowLabel.text = ">"
+        favoriteGuideArrowLabel.text = "<"
         favoriteGuideArrowLabel.font = UIFont.systemFont(ofSize: 22, weight: .semibold)
         favoriteGuideArrowLabel.textColor = UIColor(red: 0.54, green: 0.42, blue: 0.20, alpha: 1)
         favoriteGuideArrowLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -96,7 +97,26 @@ class FavoriteTableViewController: UITableViewController {
             favoriteGuideLabel.centerYAnchor.constraint(equalTo: favoriteGuideView.centerYAnchor)
         ])
 
-        tableView.tableHeaderView = favoriteGuideView
+        updateFavoriteGuideVisibility()
+    }
+
+    private func updateFavoriteGuideVisibility() {
+        guard parentId == nil else {
+            if tableView.tableHeaderView === favoriteGuideView {
+                tableView.tableHeaderView = nil
+            }
+            return
+        }
+
+        if items.isEmpty {
+            tableView.tableHeaderView = favoriteGuideView
+            updateFavoriteGuideHeaderSize()
+            startFavoriteGuideAnimation()
+        } else if tableView.tableHeaderView === favoriteGuideView {
+            favoriteGuideBookView.layer.removeAnimation(forKey: "favoriteGuideSlide")
+            favoriteGuideArrowLabel.layer.removeAnimation(forKey: "favoriteGuideFade")
+            tableView.tableHeaderView = nil
+        }
     }
 
     private func updateFavoriteGuideHeaderSize() {
@@ -121,7 +141,7 @@ class FavoriteTableViewController: UITableViewController {
 
         let slide = CABasicAnimation(keyPath: "transform.translation.x")
         slide.fromValue = 0
-        slide.toValue = 20
+        slide.toValue = -20
         slide.duration = 0.9
         slide.autoreverses = true
         slide.repeatCount = .infinity
@@ -145,6 +165,7 @@ class FavoriteTableViewController: UITableViewController {
             let item = self.items[indexPath.row]
             DatabaseAccessor.deFavorite(object: item)
             self.items.remove(at: indexPath.row)
+            self.updateFavoriteGuideVisibility()
             tableView.reloadData()
         }
         
