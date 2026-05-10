@@ -17,6 +17,8 @@ class Excerpt {
     let chapterTitle: String
     let selectedText: String
     let occurrence: Int
+    let startOffset: Int?
+    let endOffset: Int?
     let createdAt: Double
 
     init(id: Int64,
@@ -26,6 +28,8 @@ class Excerpt {
          chapterTitle: String,
          selectedText: String,
          occurrence: Int,
+         startOffset: Int?,
+         endOffset: Int?,
          createdAt: Double) {
         self.id = id
         self.bookTitle = bookTitle
@@ -34,6 +38,8 @@ class Excerpt {
         self.chapterTitle = chapterTitle
         self.selectedText = selectedText
         self.occurrence = occurrence
+        self.startOffset = startOffset
+        self.endOffset = endOffset
         self.createdAt = createdAt
     }
 }
@@ -154,9 +160,13 @@ class DatabaseAccessor {
                 chapter_title TEXT NOT NULL,
                 selected_text TEXT NOT NULL,
                 occurrence INTEGER NOT NULL,
+                start_offset INTEGER,
+                end_offset INTEGER,
                 created_at REAL NOT NULL
             )
             """)
+            _ = try? db.run("ALTER TABLE excerpts ADD COLUMN start_offset INTEGER")
+            _ = try? db.run("ALTER TABLE excerpts ADD COLUMN end_offset INTEGER")
         }
     }
 
@@ -168,7 +178,22 @@ class DatabaseAccessor {
                        chapterTitle: row[4] as! String,
                        selectedText: row[5] as! String,
                        occurrence: Int(row[6] as! Int64),
-                       createdAt: (row[7] as? Double) ?? (row[7] as? NSNumber)?.doubleValue ?? 0)
+                       startOffset: optionalInt(from: row[7]),
+                       endOffset: optionalInt(from: row[8]),
+                       createdAt: (row[9] as? Double) ?? (row[9] as? NSNumber)?.doubleValue ?? 0)
+    }
+
+    private static func optionalInt(from value: Any?) -> Int? {
+        if let value = value as? Int64 {
+            return Int(value)
+        }
+        if let value = value as? Int {
+            return value
+        }
+        if let value = value as? NSNumber {
+            return value.intValue
+        }
+        return nil
     }
     
     public static func searchByTitle(title: String) -> [AnyObject] {
@@ -366,7 +391,9 @@ class DatabaseAccessor {
                                   chapterIndex: Int,
                                   chapterTitle: String,
                                   selectedText: String,
-                                  occurrence: Int) -> Excerpt? {
+                                  occurrence: Int,
+                                  startOffset: Int?,
+                                  endOffset: Int?) -> Excerpt? {
         let text = selectedText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else {
             return nil
@@ -376,9 +403,17 @@ class DatabaseAccessor {
             let createdAt = Date().timeIntervalSince1970
             try db.run("""
             INSERT INTO excerpts
-                (book_title, book_location, chapter_index, chapter_title, selected_text, occurrence, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, [bookTitle, bookLocation, Int64(chapterIndex), chapterTitle, text, Int64(occurrence), createdAt])
+                (book_title, book_location, chapter_index, chapter_title, selected_text, occurrence, start_offset, end_offset, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, [bookTitle,
+                  bookLocation,
+                  Int64(chapterIndex),
+                  chapterTitle,
+                  text,
+                  Int64(occurrence),
+                  startOffset.map { Int64($0) },
+                  endOffset.map { Int64($0) },
+                  createdAt])
 
             return Excerpt(id: db.lastInsertRowid,
                            bookTitle: bookTitle,
@@ -387,6 +422,8 @@ class DatabaseAccessor {
                            chapterTitle: chapterTitle,
                            selectedText: text,
                            occurrence: occurrence,
+                           startOffset: startOffset,
+                           endOffset: endOffset,
                            createdAt: createdAt)
         }
     }
@@ -395,7 +432,7 @@ class DatabaseAccessor {
         return read([]) { db in
             var result: [Excerpt] = []
             for row in try db.prepare("""
-            SELECT id, book_title, book_location, chapter_index, chapter_title, selected_text, occurrence, created_at
+            SELECT id, book_title, book_location, chapter_index, chapter_title, selected_text, occurrence, start_offset, end_offset, created_at
             FROM excerpts
             ORDER BY created_at DESC, id DESC
             """) {
@@ -409,7 +446,7 @@ class DatabaseAccessor {
         return read([]) { db in
             var result: [Excerpt] = []
             for row in try db.prepare("""
-            SELECT id, book_title, book_location, chapter_index, chapter_title, selected_text, occurrence, created_at
+            SELECT id, book_title, book_location, chapter_index, chapter_title, selected_text, occurrence, start_offset, end_offset, created_at
             FROM excerpts
             WHERE book_location = ? AND chapter_index = ?
             ORDER BY created_at ASC, id ASC
@@ -423,7 +460,7 @@ class DatabaseAccessor {
     public static func getExcerpt(id: Int64) -> Excerpt? {
         return read(nil) { db in
             for row in try db.prepare("""
-            SELECT id, book_title, book_location, chapter_index, chapter_title, selected_text, occurrence, created_at
+            SELECT id, book_title, book_location, chapter_index, chapter_title, selected_text, occurrence, start_offset, end_offset, created_at
             FROM excerpts
             WHERE id = ?
             LIMIT 1

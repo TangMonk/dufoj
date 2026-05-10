@@ -441,13 +441,17 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
             }
 
             let occurrence = Int(self.doubleValue(from: dictionary["occurrence"]))
+            let startOffset = self.optionalInt(from: dictionary["startOffset"])
+            let endOffset = self.optionalInt(from: dictionary["endOffset"])
             let chapter = book.chapters[self.currentChapterIndex]
             guard let excerpt = DatabaseAccessor.addExcerpt(bookTitle: book.title,
                                                             bookLocation: self.bookLocation,
                                                             chapterIndex: self.currentChapterIndex,
                                                             chapterTitle: chapter.title,
                                                             selectedText: text,
-                                                            occurrence: occurrence) else {
+                                                            occurrence: occurrence,
+                                                            startOffset: startOffset,
+                                                            endOffset: endOffset) else {
                 ShowMessage(controller: self, msg: "保存摘录失败", title: "错误")
                 return
             }
@@ -500,6 +504,14 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
             return -1;
           }
 
+          function boundaryIndex(ranges, node, offset) {
+            var index = indexOfNode(ranges, node);
+            if (index >= 0) {
+              return index + offset;
+            }
+            return -1;
+          }
+
           var selection = window.getSelection();
           if (!selection || selection.rangeCount === 0) {
             return null;
@@ -512,8 +524,14 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
 
           var range = selection.getRangeAt(0);
           var info = documentTextInfo();
-          var start = indexOfNode(info.ranges, range.startContainer);
-          start = start >= 0 ? start + range.startOffset : info.text.indexOf(selectedText);
+          var start = boundaryIndex(info.ranges, range.startContainer, range.startOffset);
+          var end = boundaryIndex(info.ranges, range.endContainer, range.endOffset);
+          if (start < 0) {
+            start = info.text.indexOf(selectedText);
+          }
+          if (end < 0 && start >= 0) {
+            end = start + selectedText.length;
+          }
 
           var occurrence = 0;
           if (start > 0) {
@@ -536,7 +554,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
           } catch (e) {}
 
           selection.removeAllRanges();
-          return { text: selectedText, occurrence: occurrence };
+          return { text: selectedText, occurrence: occurrence, startOffset: start, endOffset: end };
         })();
         """
     }
@@ -552,7 +570,9 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
             return [
                 "id": excerpt.id,
                 "text": excerpt.selectedText,
-                "occurrence": excerpt.occurrence
+                "occurrence": excerpt.occurrence,
+                "startOffset": excerpt.startOffset ?? NSNull(),
+                "endOffset": excerpt.endOffset ?? NSNull()
             ]
         }
 
@@ -646,6 +666,36 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
             return found;
           }
 
+          function normalizedMatchIndex(text, needle, occurrence) {
+            var compactText = '';
+            var compactMap = [];
+            for (var i = 0; i < text.length; i++) {
+              if (!/[\\s\\u3000]/.test(text.charAt(i))) {
+                compactMap.push(i);
+                compactText += text.charAt(i);
+              }
+            }
+
+            var compactNeedle = (needle || '').replace(/[\\s\\u3000]+/g, '');
+            if (!compactNeedle) {
+              return null;
+            }
+
+            var compactStart = indexForOccurrence(compactText, compactNeedle, occurrence);
+            if (compactStart < 0) {
+              compactStart = compactText.indexOf(compactNeedle);
+            }
+            if (compactStart < 0) {
+              return null;
+            }
+
+            var compactEnd = compactStart + compactNeedle.length - 1;
+            return {
+              start: compactMap[compactStart],
+              end: compactMap[compactEnd] + 1
+            };
+          }
+
           unwrapExistingUnderlines();
 
           excerpts.forEach(function(excerpt) {
@@ -654,15 +704,37 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
             }
 
             var info = documentTextInfo();
-            var startIndex = indexForOccurrence(info.text, excerpt.text, Math.max(0, excerpt.occurrence || 0));
-            if (startIndex < 0) {
-              startIndex = info.text.indexOf(excerpt.text);
-            }
-            if (startIndex < 0) {
-              return;
+            var startIndex = -1;
+            var endIndex = -1;
+
+            if (typeof excerpt.startOffset === 'number' &&
+                typeof excerpt.endOffset === 'number' &&
+                excerpt.startOffset >= 0 &&
+                excerpt.endOffset > excerpt.startOffset &&
+                excerpt.endOffset <= info.text.length) {
+              startIndex = excerpt.startOffset;
+              endIndex = excerpt.endOffset;
             }
 
-            var endIndex = startIndex + excerpt.text.length;
+            if (startIndex < 0) {
+              startIndex = indexForOccurrence(info.text, excerpt.text, Math.max(0, excerpt.occurrence || 0));
+              if (startIndex < 0) {
+                startIndex = info.text.indexOf(excerpt.text);
+              }
+              if (startIndex >= 0) {
+                endIndex = startIndex + excerpt.text.length;
+              }
+            }
+
+            if (startIndex < 0 || endIndex <= startIndex) {
+              var normalizedMatch = normalizedMatchIndex(info.text, excerpt.text, Math.max(0, excerpt.occurrence || 0));
+              if (!normalizedMatch) {
+                return;
+              }
+              startIndex = normalizedMatch.start;
+              endIndex = normalizedMatch.end;
+            }
+
             var start = boundaryAt(info.ranges, startIndex, false);
             var end = boundaryAt(info.ranges, endIndex, true);
             if (!start || !end) {
@@ -861,6 +933,19 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
             return value
         }
         return defaultValue
+    }
+
+    private func optionalInt(from value: Any?) -> Int? {
+        if let number = value as? NSNumber {
+            return number.intValue
+        }
+        if let value = value as? Int {
+            return value
+        }
+        if let value = value as? Double {
+            return Int(value)
+        }
+        return nil
     }
 
     private func clampedFontScale(_ value: Double) -> Double {
