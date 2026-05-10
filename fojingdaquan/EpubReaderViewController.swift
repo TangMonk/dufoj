@@ -1128,13 +1128,15 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
 
         let closeButton = UIButton(type: .system)
         closeButton.translatesAutoresizingMaskIntoConstraints = false
-        closeButton.setTitle("关闭", for: .normal)
+        closeButton.setTitle("×", for: .normal)
+        closeButton.titleLabel?.font = UIFont.systemFont(ofSize: 24, weight: .regular)
         closeButton.addTarget(self, action: #selector(closeAIExplanationButtonTapped), for: .touchUpInside)
         headerView.addSubview(closeButton)
 
         let settingsButton = UIButton(type: .system)
         settingsButton.translatesAutoresizingMaskIntoConstraints = false
         settingsButton.setTitle("设置", for: .normal)
+        settingsButton.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .medium)
         settingsButton.addTarget(self, action: #selector(showAISettings), for: .touchUpInside)
         headerView.addSubview(settingsButton)
 
@@ -1172,9 +1174,8 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
 
             cardView.centerXAnchor.constraint(equalTo: overlayView.centerXAnchor),
             cardView.centerYAnchor.constraint(equalTo: overlayView.centerYAnchor),
-            cardView.leadingAnchor.constraint(greaterThanOrEqualTo: safeArea.leadingAnchor, constant: 16),
-            cardView.trailingAnchor.constraint(lessThanOrEqualTo: safeArea.trailingAnchor, constant: -16),
-            cardView.widthAnchor.constraint(lessThanOrEqualToConstant: 520),
+            cardView.leadingAnchor.constraint(equalTo: safeArea.leadingAnchor, constant: 22),
+            cardView.trailingAnchor.constraint(equalTo: safeArea.trailingAnchor, constant: -22),
             cardView.heightAnchor.constraint(equalTo: safeArea.heightAnchor, multiplier: 0.62),
 
             headerView.topAnchor.constraint(equalTo: cardView.topAnchor),
@@ -1184,10 +1185,16 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
 
             titleLabel.centerXAnchor.constraint(equalTo: headerView.centerXAnchor),
             titleLabel.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
+            titleLabel.leadingAnchor.constraint(greaterThanOrEqualTo: closeButton.trailingAnchor, constant: 10),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: settingsButton.leadingAnchor, constant: -10),
             closeButton.leadingAnchor.constraint(equalTo: headerView.leadingAnchor, constant: 14),
             closeButton.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
+            closeButton.widthAnchor.constraint(equalToConstant: 44),
+            closeButton.heightAnchor.constraint(equalToConstant: 44),
             settingsButton.trailingAnchor.constraint(equalTo: headerView.trailingAnchor, constant: -14),
             settingsButton.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
+            settingsButton.widthAnchor.constraint(equalToConstant: 54),
+            settingsButton.heightAnchor.constraint(equalToConstant: 44),
 
             textView.topAnchor.constraint(equalTo: headerView.bottomAnchor, constant: 6),
             textView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 14),
