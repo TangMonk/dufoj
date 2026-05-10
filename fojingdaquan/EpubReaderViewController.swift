@@ -415,6 +415,22 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
         UIMenuController.shared.update()
     }
 
+    @available(iOS 13.0, *)
+    override func buildMenu(with builder: UIMenuBuilder) {
+        super.buildMenu(with: builder)
+
+        let command = UICommand(title: "📝摘录",
+                                image: nil,
+                                action: #selector(createExcerptFromSelection),
+                                propertyList: nil)
+        let menu = UIMenu(title: "",
+                          image: nil,
+                          identifier: UIMenu.Identifier("dufoj.excerpt.menu"),
+                          options: .displayInline,
+                          children: [command])
+        builder.insertChild(menu, atStartOfMenu: .standardEdit)
+    }
+
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
         if action == #selector(createExcerptFromSelection) {
             return true
