@@ -61,6 +61,19 @@ private struct DeepSeekChatResponse: Codable {
     let error: APIError?
 }
 
+private struct DeepSeekChatStreamResponse: Codable {
+    struct Choice: Codable {
+        struct Delta: Codable {
+            let content: String?
+        }
+
+        let delta: Delta?
+    }
+
+    let choices: [Choice]?
+    let error: DeepSeekChatResponse.APIError?
+}
+
 private enum EpubReaderError: Error {
     case unzipFailed
     case missingContainer
@@ -87,6 +100,137 @@ private enum DeepSeekExplanationError: LocalizedError {
             return "AI 服务没有返回解释内容"
         case .cancelled:
             return "已取消"
+        }
+    }
+}
+
+private final class DeepSeekStreamingClient: NSObject, URLSessionDataDelegate {
+    private let request: URLRequest
+    private let onText: (String) -> Void
+    private let onComplete: (Result<Void, Error>) -> Void
+    private var session: URLSession?
+    private var responseData = Data()
+    private var lineBuffer = ""
+    private var statusCode = 0
+    private var hasContent = false
+    private var isCompleted = false
+
+    private(set) var task: URLSessionDataTask?
+
+    init(request: URLRequest,
+         onText: @escaping (String) -> Void,
+         onComplete: @escaping (Result<Void, Error>) -> Void) {
+        self.request = request
+        self.onText = onText
+        self.onComplete = onComplete
+    }
+
+    func start() {
+        let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+        self.session = session
+        let task = session.dataTask(with: request)
+        self.task = task
+        task.resume()
+    }
+
+    func cancel() {
+        task?.cancel()
+        session?.invalidateAndCancel()
+    }
+
+    func urlSession(_ session: URLSession,
+                    dataTask: URLSessionDataTask,
+                    didReceive response: URLResponse,
+                    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+        completionHandler(.allow)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        responseData.append(data)
+        guard (200...299).contains(statusCode),
+              let string = String(data: data, encoding: .utf8) else {
+            return
+        }
+
+        lineBuffer += string
+        processBufferedLines()
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        if !lineBuffer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            processStreamLine(lineBuffer.trimmingCharacters(in: .whitespacesAndNewlines))
+            lineBuffer = ""
+        }
+
+        if let error = error as NSError? {
+            if error.code == NSURLErrorCancelled {
+                complete(.failure(DeepSeekExplanationError.cancelled))
+            } else {
+                complete(.failure(DeepSeekExplanationError.requestFailed(error.localizedDescription)))
+            }
+            return
+        }
+
+        if !(200...299).contains(statusCode) {
+            let decodedResponse = try? JSONDecoder().decode(DeepSeekChatResponse.self, from: responseData)
+            let message = decodedResponse?.error?.message ?? HTTPURLResponse.localizedString(forStatusCode: statusCode)
+            complete(.failure(DeepSeekExplanationError.requestFailed(message)))
+            return
+        }
+
+        complete(hasContent ? .success(()) : .failure(DeepSeekExplanationError.emptyResponse))
+    }
+
+    private func processBufferedLines() {
+        while let range = lineBuffer.range(of: "\n") {
+            let line = String(lineBuffer[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            lineBuffer.removeSubrange(lineBuffer.startIndex...range.lowerBound)
+            processStreamLine(line)
+        }
+    }
+
+    private func processStreamLine(_ line: String) {
+        guard !line.isEmpty, line.hasPrefix("data:") else {
+            return
+        }
+
+        let payload = String(line.dropFirst("data:".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard payload != "[DONE]" else {
+            return
+        }
+
+        guard let data = payload.data(using: .utf8),
+              let response = try? JSONDecoder().decode(DeepSeekChatStreamResponse.self, from: data) else {
+            return
+        }
+
+        if let message = response.error?.message {
+            complete(.failure(DeepSeekExplanationError.requestFailed(message)))
+            cancel()
+            return
+        }
+
+        guard let content = response.choices?.compactMap({ $0.delta?.content }).joined(),
+              !content.isEmpty else {
+            return
+        }
+
+        hasContent = true
+        DispatchQueue.main.async {
+            self.onText(content)
+        }
+    }
+
+    private func complete(_ result: Result<Void, Error>) {
+        guard !isCompleted else {
+            return
+        }
+
+        isCompleted = true
+        session?.finishTasksAndInvalidate()
+        DispatchQueue.main.async {
+            self.onComplete(result)
         }
     }
 }
@@ -118,6 +262,12 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
     private var pendingScrollY: Double?
     private var pendingScrollToExcerptID: Int64?
     private var activeAIExplanationTask: URLSessionDataTask?
+    private var activeAIExplanationClient: DeepSeekStreamingClient?
+    private var aiExplanationDisplayTimer: Timer?
+    private var aiExplanationPendingCharacters: [Character] = []
+    private var aiExplanationDisplayedText = ""
+    private var aiExplanationDidFinishStreaming = false
+    private var aiExplanationCopyActionAdded = false
     private var readingPositionKey: String {
         return "dufoj.epubReader.position.\(epubURL.path)"
     }
@@ -176,6 +326,8 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
 
     deinit {
         activeAIExplanationTask?.cancel()
+        activeAIExplanationClient?.cancel()
+        aiExplanationDisplayTimer?.invalidate()
         NotificationCenter.default.removeObserver(self)
     }
 
@@ -567,38 +719,125 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
     }
 
     private func showAIExplanation(for selectedText: String) {
-        activeAIExplanationTask?.cancel()
+        resetAIExplanationState()
 
         let alert = UIAlertController(title: "AI解释",
-                                      message: "正在解释...",
+                                      message: "\n\n",
                                       preferredStyle: .alert)
+        let activityIndicator = UIActivityIndicatorView(style: .gray)
+        activityIndicator.translatesAutoresizingMaskIntoConstraints = false
+        activityIndicator.startAnimating()
+        alert.view.addSubview(activityIndicator)
+        NSLayoutConstraint.activate([
+            activityIndicator.centerXAnchor.constraint(equalTo: alert.view.centerXAnchor),
+            activityIndicator.topAnchor.constraint(equalTo: alert.view.topAnchor, constant: 58)
+        ])
+
         alert.addAction(UIAlertAction(title: "关闭", style: .cancel) { [weak self] _ in
-            self?.activeAIExplanationTask?.cancel()
-            self?.activeAIExplanationTask = nil
+            self?.resetAIExplanationState()
         })
         present(alert, animated: true, completion: nil)
 
-        requestAIExplanation(for: selectedText) { [weak self, weak alert] result in
+        requestAIExplanationStream(for: selectedText,
+                                   onText: { [weak self, weak alert, weak activityIndicator] text in
+                                       guard let self = self,
+                                             let alert = alert,
+                                             let activityIndicator = activityIndicator else {
+                                           return
+                                       }
+                                       self.enqueueAIExplanationText(text, in: alert, loadingView: activityIndicator)
+                                   },
+                                   completion: { [weak self, weak alert, weak activityIndicator] result in
             guard let self = self, let alert = alert else { return }
             guard self.presentedViewController === alert else { return }
 
             switch result {
-            case .success(let explanation):
-                alert.message = explanation
-                alert.addAction(UIAlertAction(title: "复制解释", style: .default) { _ in
-                    UIPasteboard.general.string = explanation
-                })
+            case .success:
+                self.aiExplanationDidFinishStreaming = true
+                self.finishAIExplanationIfReady(in: alert)
             case .failure(let error):
                 if let deepSeekError = error as? DeepSeekExplanationError,
                    case .cancelled = deepSeekError {
                     return
                 }
-                alert.message = error.localizedDescription
+                activityIndicator?.stopAnimating()
+                activityIndicator?.removeFromSuperview()
+                if self.aiExplanationDisplayedText.isEmpty {
+                    alert.message = error.localizedDescription
+                } else {
+                    self.enqueueAIExplanationText("\n\n\(error.localizedDescription)", in: alert, loadingView: nil)
+                    self.aiExplanationDidFinishStreaming = true
+                    self.finishAIExplanationIfReady(in: alert)
+                }
             }
+        })
+    }
+
+    private func resetAIExplanationState() {
+        activeAIExplanationTask?.cancel()
+        activeAIExplanationClient?.cancel()
+        activeAIExplanationTask = nil
+        activeAIExplanationClient = nil
+        aiExplanationDisplayTimer?.invalidate()
+        aiExplanationDisplayTimer = nil
+        aiExplanationPendingCharacters = []
+        aiExplanationDisplayedText = ""
+        aiExplanationDidFinishStreaming = false
+        aiExplanationCopyActionAdded = false
+    }
+
+    private func enqueueAIExplanationText(_ text: String, in alert: UIAlertController, loadingView: UIActivityIndicatorView?) {
+        aiExplanationPendingCharacters.append(contentsOf: text)
+        startAIExplanationDisplayTimer(in: alert, loadingView: loadingView)
+    }
+
+    private func startAIExplanationDisplayTimer(in alert: UIAlertController, loadingView: UIActivityIndicatorView?) {
+        guard aiExplanationDisplayTimer == nil else {
+            return
+        }
+
+        aiExplanationDisplayTimer = Timer.scheduledTimer(withTimeInterval: 0.035, repeats: true) { [weak self, weak alert, weak loadingView] timer in
+            guard let self = self, let alert = alert, self.presentedViewController === alert else {
+                timer.invalidate()
+                return
+            }
+
+            guard !self.aiExplanationPendingCharacters.isEmpty else {
+                timer.invalidate()
+                self.aiExplanationDisplayTimer = nil
+                self.finishAIExplanationIfReady(in: alert)
+                return
+            }
+
+            if self.aiExplanationDisplayedText.isEmpty {
+                loadingView?.stopAnimating()
+                loadingView?.removeFromSuperview()
+            }
+
+            let nextCharacter = self.aiExplanationPendingCharacters.removeFirst()
+            self.aiExplanationDisplayedText.append(nextCharacter)
+            alert.message = self.aiExplanationDisplayedText
         }
     }
 
-    private func requestAIExplanation(for selectedText: String, completion: @escaping (Result<String, Error>) -> Void) {
+    private func finishAIExplanationIfReady(in alert: UIAlertController) {
+        guard aiExplanationDidFinishStreaming,
+              aiExplanationPendingCharacters.isEmpty,
+              !aiExplanationDisplayedText.isEmpty,
+              !aiExplanationCopyActionAdded else {
+            return
+        }
+
+        aiExplanationCopyActionAdded = true
+        let explanation = aiExplanationDisplayedText
+        alert.addAction(UIAlertAction(title: "复制解释", style: .default) { _ in
+            UIPasteboard.general.string = explanation
+        })
+    }
+
+    private func requestAIExplanationStream(for selectedText: String,
+                                            onText: @escaping (String) -> Void,
+                                            completion: @escaping (Result<Void, Error>) -> Void) {
         guard let url = URL(string: EpubReaderViewController.deepSeekAPIURL) else {
             completion(.failure(DeepSeekExplanationError.invalidURL))
             return
@@ -610,11 +849,11 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
         request.setValue("Bearer \(EpubReaderViewController.deepSeekAPIKey)", forHTTPHeaderField: "Authorization")
 
         let body = DeepSeekChatRequest(model: EpubReaderViewController.deepSeekModel,
-                                       messages: [
-                                           DeepSeekChatMessage(role: "system", content: EpubReaderViewController.deepSeekSystemPrompt),
-                                           DeepSeekChatMessage(role: "user", content: "翻译：\(selectedText)")
-                                       ],
-                                       stream: false)
+                                           messages: [
+                                               DeepSeekChatMessage(role: "system", content: EpubReaderViewController.deepSeekSystemPrompt),
+                                               DeepSeekChatMessage(role: "user", content: "翻译：\(selectedText)")
+                                           ],
+                                       stream: true)
         do {
             request.httpBody = try JSONEncoder().encode(body)
         } catch {
@@ -622,48 +861,14 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate {
             return
         }
 
-        let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
-            let result: Result<String, Error>
-            defer {
-                DispatchQueue.main.async {
-                    self?.activeAIExplanationTask = nil
-                    completion(result)
-                }
-            }
-
-            if let error = error as NSError? {
-                if error.code == NSURLErrorCancelled {
-                    result = .failure(DeepSeekExplanationError.cancelled)
-                } else {
-                    result = .failure(DeepSeekExplanationError.requestFailed(error.localizedDescription))
-                }
-                return
-            }
-
-            guard let httpResponse = response as? HTTPURLResponse,
-                  let data = data else {
-                result = .failure(DeepSeekExplanationError.invalidResponse)
-                return
-            }
-
-            let decodedResponse = try? JSONDecoder().decode(DeepSeekChatResponse.self, from: data)
-            if !(200...299).contains(httpResponse.statusCode) {
-                let message = decodedResponse?.error?.message ?? HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode)
-                result = .failure(DeepSeekExplanationError.requestFailed(message))
-                return
-            }
-
-            guard let content = decodedResponse?.choices?.first?.message.content
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-                  !content.isEmpty else {
-                result = .failure(DeepSeekExplanationError.emptyResponse)
-                return
-            }
-
-            result = .success(content)
+        let client = DeepSeekStreamingClient(request: request, onText: onText) { [weak self] result in
+            self?.activeAIExplanationTask = nil
+            self?.activeAIExplanationClient = nil
+            completion(result)
         }
-        activeAIExplanationTask = task
-        task.resume()
+        activeAIExplanationClient = client
+        client.start()
+        activeAIExplanationTask = client.task
     }
 
     private func selectionExcerptScript() -> String {
