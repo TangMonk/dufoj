@@ -400,6 +400,26 @@ class DatabaseAccessor {
         }
 
         return write(nil) { db in
+            if let startOffset = startOffset, let endOffset = endOffset {
+                for row in try db.prepare("""
+                SELECT id, book_title, book_location, chapter_index, chapter_title, selected_text, occurrence, start_offset, end_offset, created_at
+                FROM excerpts
+                WHERE book_location = ? AND chapter_index = ? AND start_offset = ? AND end_offset = ?
+                LIMIT 1
+                """, [bookLocation, Int64(chapterIndex), Int64(startOffset), Int64(endOffset)]) {
+                    return excerpt(from: row)
+                }
+            } else {
+                for row in try db.prepare("""
+                SELECT id, book_title, book_location, chapter_index, chapter_title, selected_text, occurrence, start_offset, end_offset, created_at
+                FROM excerpts
+                WHERE book_location = ? AND chapter_index = ? AND selected_text = ? AND occurrence = ?
+                LIMIT 1
+                """, [bookLocation, Int64(chapterIndex), text, Int64(occurrence)]) {
+                    return excerpt(from: row)
+                }
+            }
+
             let createdAt = Date().timeIntervalSince1970
             try db.run("""
             INSERT INTO excerpts
@@ -468,6 +488,13 @@ class DatabaseAccessor {
                 return excerpt(from: row)
             }
             return nil
+        }
+    }
+
+    public static func deleteExcerpt(id: Int64) -> Bool {
+        return write(false) { db in
+            try db.run("DELETE FROM excerpts WHERE id = ?", [id])
+            return db.changes > 0
         }
     }
 }

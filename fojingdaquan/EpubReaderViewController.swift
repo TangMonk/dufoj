@@ -573,12 +573,14 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
         activeAIExplanationClient?.cancel()
         aiExplanationDisplayTimer?.invalidate()
         webView?.configuration.userContentController.removeScriptMessageHandler(forName: "dufojAIExplain")
+        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "dufojExcerptTapped")
         NotificationCenter.default.removeObserver(self)
     }
 
     private func setupWebView() {
         let configuration = WKWebViewConfiguration()
         configuration.userContentController.add(self, name: "dufojAIExplain")
+        configuration.userContentController.add(self, name: "dufojExcerptTapped")
         webView = WKWebView(frame: .zero, configuration: configuration)
         installReaderStyleUserScript()
         webView.navigationDelegate = self
@@ -957,14 +959,43 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.name == "dufojAIExplain",
-              let dictionary = message.body as? [String: Any],
-              let text = dictionary["text"] as? String,
-              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard let dictionary = message.body as? [String: Any] else {
             return
         }
 
-        showAIExplanation(for: text)
+        if message.name == "dufojAIExplain",
+           let text = dictionary["text"] as? String,
+           !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            showAIExplanation(for: text)
+            return
+        }
+
+        if message.name == "dufojExcerptTapped" {
+            let id = Int64(doubleValue(from: dictionary["id"], defaultValue: -1))
+            guard id > 0 else { return }
+            showExcerptActions(excerptID: id)
+        }
+    }
+
+    private func showExcerptActions(excerptID: Int64) {
+        let alert = UIAlertController(title: "摘录", message: "要删除这条摘录并取消下划线吗？", preferredStyle: .actionSheet)
+        alert.addAction(UIAlertAction(title: "删除摘录", style: .destructive) { [weak self] _ in
+            guard let self = self else { return }
+            if DatabaseAccessor.deleteExcerpt(id: excerptID) {
+                self.applyExcerptsToCurrentDocument(scrollToExcerptID: nil) { [weak self] in
+                    self?.applyAIInlineButtonsToCurrentDocument()
+                }
+            } else {
+                ShowMessage(controller: self, msg: "删除摘录失败", title: "错误")
+            }
+        })
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel, handler: nil))
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = view
+            popover.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1)
+            popover.permittedArrowDirections = []
+        }
+        present(alert, animated: true, completion: nil)
     }
 
     private func installExcerptMenuItem() {
@@ -1019,6 +1050,16 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
                   !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 return
             }
+            if let status = dictionary["status"] as? String {
+                if status == "overlap" {
+                    ShowMessage(controller: self, msg: "这段文字已包含摘录", title: "摘录")
+                    return
+                }
+                if status == "wrapFailed" {
+                    ShowMessage(controller: self, msg: "无法给这段文字添加下划线，请重新选择", title: "摘录")
+                    return
+                }
+            }
 
             let occurrence = Int(self.doubleValue(from: dictionary["occurrence"]))
             let startOffset = self.optionalInt(from: dictionary["startOffset"])
@@ -1032,6 +1073,9 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
                                                             occurrence: occurrence,
                                                             startOffset: startOffset,
                                                             endOffset: endOffset) else {
+                self.applyExcerptsToCurrentDocument(scrollToExcerptID: nil) { [weak self] in
+                    self?.applyAIInlineButtonsToCurrentDocument()
+                }
                 ShowMessage(controller: self, msg: "保存摘录失败", title: "错误")
                 return
             }
@@ -1452,6 +1496,10 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
     private func selectionExcerptScript() -> String {
         return """
         (function() {
+          function isIgnoredElement(element) {
+            return !!(element && element.closest && element.closest('.dufoj-ai-inline-wrapper'));
+          }
+
           function textNodesUnder(root) {
             var nodes = [];
             var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
@@ -1461,6 +1509,9 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
                 }
                 var parent = node.parentElement;
                 if (!parent || /^(SCRIPT|STYLE|NOSCRIPT)$/i.test(parent.tagName)) {
+                  return NodeFilter.FILTER_REJECT;
+                }
+                if (isIgnoredElement(parent)) {
                   return NodeFilter.FILTER_REJECT;
                 }
                 return NodeFilter.FILTER_ACCEPT;
@@ -1484,21 +1535,81 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
             return { text: text, ranges: ranges };
           }
 
-          function indexOfNode(ranges, node) {
+          function boundaryAt(ranges, index, preferEnd) {
             for (var i = 0; i < ranges.length; i++) {
-              if (ranges[i].node === node) {
-                return ranges[i].start;
+              var item = ranges[i];
+              if (index >= item.start && index < item.end) {
+                return { node: item.node, offset: index - item.start };
+              }
+              if (preferEnd && index === item.end) {
+                return { node: item.node, offset: item.node.nodeValue.length };
               }
             }
-            return -1;
+            return null;
           }
 
-          function boundaryIndex(ranges, node, offset) {
-            var index = indexOfNode(ranges, node);
-            if (index >= 0) {
-              return index + offset;
+          function selectedTextInfo(range, info) {
+            var start = -1;
+            var end = -1;
+            var text = '';
+            info.ranges.forEach(function(item) {
+              var nodeRange = document.createRange();
+              nodeRange.selectNodeContents(item.node);
+              if (range.compareBoundaryPoints(Range.END_TO_START, nodeRange) <= 0 ||
+                  range.compareBoundaryPoints(Range.START_TO_END, nodeRange) >= 0) {
+                return;
+              }
+
+              var localStart = range.startContainer === item.node ? range.startOffset : 0;
+              var localEnd = range.endContainer === item.node ? range.endOffset : item.node.nodeValue.length;
+              localStart = Math.max(0, Math.min(localStart, item.node.nodeValue.length));
+              localEnd = Math.max(localStart, Math.min(localEnd, item.node.nodeValue.length));
+              if (localEnd <= localStart) {
+                return;
+              }
+
+              if (start < 0) {
+                start = item.start + localStart;
+              }
+              end = item.start + localEnd;
+              text += item.node.nodeValue.slice(localStart, localEnd);
+            });
+
+            var leading = (text.match(/^[\\s\\u3000]*/) || [''])[0].length;
+            var trailing = (text.match(/[\\s\\u3000]*$/) || [''])[0].length;
+            var trimmedEnd = Math.max(leading, text.length - trailing);
+            return {
+              text: text.slice(leading, trimmedEnd),
+              start: start < 0 ? -1 : start + leading,
+              end: end < 0 ? -1 : end - trailing
+            };
+          }
+
+          function hasExistingUnderlineBetween(info, start, end) {
+            return info.ranges.some(function(item) {
+              if (item.end <= start || item.start >= end) {
+                return false;
+              }
+              return !!(item.node.parentElement &&
+                item.node.parentElement.closest &&
+                item.node.parentElement.closest('.dufoj-excerpt-underline'));
+            });
+          }
+
+          function indexForOccurrence(text, needle, start) {
+            var occurrence = 0;
+            if (start > 0) {
+              var searchFrom = 0;
+              while (true) {
+                var found = text.indexOf(needle, searchFrom);
+                if (found < 0 || found >= start) {
+                  break;
+                }
+                occurrence += 1;
+                searchFrom = found + Math.max(needle.length, 1);
+              }
             }
-            return -1;
+            return occurrence;
           }
 
           var selection = window.getSelection();
@@ -1506,44 +1617,44 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
             return null;
           }
 
-          var selectedText = selection.toString().replace(/^\\s+|\\s+$/g, '');
-          if (!selectedText) {
+          var range = selection.getRangeAt(0);
+          var info = documentTextInfo();
+          var selected = selectedTextInfo(range, info);
+          var selectedText = selected.text;
+          if (!selectedText || selected.start < 0 || selected.end <= selected.start) {
             return null;
           }
 
-          var range = selection.getRangeAt(0);
-          var info = documentTextInfo();
-          var start = boundaryIndex(info.ranges, range.startContainer, range.startOffset);
-          var end = boundaryIndex(info.ranges, range.endContainer, range.endOffset);
-          if (start < 0) {
-            start = info.text.indexOf(selectedText);
-          }
-          if (end < 0 && start >= 0) {
-            end = start + selectedText.length;
+          if (hasExistingUnderlineBetween(info, selected.start, selected.end)) {
+            selection.removeAllRanges();
+            return { text: selectedText, status: 'overlap' };
           }
 
-          var occurrence = 0;
-          if (start > 0) {
-            var searchFrom = 0;
-            while (true) {
-              var found = info.text.indexOf(selectedText, searchFrom);
-              if (found < 0 || found >= start) {
-                break;
-              }
-              occurrence += 1;
-              searchFrom = found + Math.max(selectedText.length, 1);
-            }
+          var startBoundary = boundaryAt(info.ranges, selected.start, false);
+          var endBoundary = boundaryAt(info.ranges, selected.end, true);
+          if (!startBoundary || !endBoundary) {
+            return { text: selectedText, status: 'wrapFailed' };
           }
 
           try {
+            var cleanRange = document.createRange();
+            cleanRange.setStart(startBoundary.node, startBoundary.offset);
+            cleanRange.setEnd(endBoundary.node, endBoundary.offset);
             var wrapper = document.createElement('span');
             wrapper.className = 'dufoj-excerpt-underline';
-            wrapper.appendChild(range.extractContents());
-            range.insertNode(wrapper);
-          } catch (e) {}
+            wrapper.appendChild(cleanRange.extractContents());
+            cleanRange.insertNode(wrapper);
+          } catch (e) {
+            return { text: selectedText, status: 'wrapFailed' };
+          }
 
           selection.removeAllRanges();
-          return { text: selectedText, occurrence: occurrence, startOffset: start, endOffset: end };
+          return {
+            text: selectedText,
+            occurrence: indexForOccurrence(info.text, selectedText, selected.start),
+            startOffset: selected.start,
+            endOffset: selected.end
+          };
         })();
         """
     }
@@ -1597,6 +1708,10 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
             });
           }
 
+          function isIgnoredElement(element) {
+            return !!(element && element.closest && element.closest('.dufoj-ai-inline-wrapper'));
+          }
+
           function textNodesUnder(root) {
             var nodes = [];
             var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
@@ -1606,6 +1721,9 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
                 }
                 var parent = node.parentElement;
                 if (!parent || /^(SCRIPT|STYLE|NOSCRIPT)$/i.test(parent.tagName)) {
+                  return NodeFilter.FILTER_REJECT;
+                }
+                if (isIgnoredElement(parent)) {
                   return NodeFilter.FILTER_REJECT;
                 }
                 return NodeFilter.FILTER_ACCEPT;
@@ -1685,14 +1803,16 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
             };
           }
 
-          unwrapExistingUnderlines();
+          function compactText(text) {
+            return (text || '').replace(/[\\s\\u3000]+/g, '');
+          }
 
-          excerpts.forEach(function(excerpt) {
-            if (!excerpt || !excerpt.text) {
-              return;
-            }
+          function matchesStoredText(text, start, end, needle) {
+            var candidate = text.slice(start, end);
+            return candidate === needle || compactText(candidate) === compactText(needle);
+          }
 
-            var info = documentTextInfo();
+          function rangeForExcerpt(excerpt, info) {
             var startIndex = -1;
             var endIndex = -1;
 
@@ -1700,7 +1820,8 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
                 typeof excerpt.endOffset === 'number' &&
                 excerpt.startOffset >= 0 &&
                 excerpt.endOffset > excerpt.startOffset &&
-                excerpt.endOffset <= info.text.length) {
+                excerpt.endOffset <= info.text.length &&
+                matchesStoredText(info.text, excerpt.startOffset, excerpt.endOffset, excerpt.text)) {
               startIndex = excerpt.startOffset;
               endIndex = excerpt.endOffset;
             }
@@ -1718,14 +1839,71 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
             if (startIndex < 0 || endIndex <= startIndex) {
               var normalizedMatch = normalizedMatchIndex(info.text, excerpt.text, Math.max(0, excerpt.occurrence || 0));
               if (!normalizedMatch) {
-                return;
+                return null;
               }
               startIndex = normalizedMatch.start;
               endIndex = normalizedMatch.end;
             }
 
-            var start = boundaryAt(info.ranges, startIndex, false);
-            var end = boundaryAt(info.ranges, endIndex, true);
+            if (startIndex < 0 || endIndex <= startIndex || endIndex > info.text.length) {
+              return null;
+            }
+            return { excerpt: excerpt, start: startIndex, end: endIndex };
+          }
+
+          function nonOverlappingRanges(ranges) {
+            var accepted = [];
+            ranges.sort(function(a, b) {
+              if (a.start !== b.start) {
+                return a.start - b.start;
+              }
+              return a.end - b.end;
+            });
+
+            ranges.forEach(function(item) {
+              var overlaps = accepted.some(function(existing) {
+                return item.start < existing.end && item.end > existing.start;
+              });
+              if (!overlaps) {
+                accepted.push(item);
+              }
+            });
+            return accepted;
+          }
+
+          function attachExcerptTapHandler(wrapper, excerpt) {
+            wrapper.addEventListener('click', function(event) {
+              var selection = window.getSelection();
+              if (selection && selection.toString && selection.toString().replace(/^[\\s\\u3000]+|[\\s\\u3000]+$/g, '').length > 0) {
+                return;
+              }
+              if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.dufojExcerptTapped) {
+                event.preventDefault();
+                event.stopPropagation();
+                window.webkit.messageHandlers.dufojExcerptTapped.postMessage({ id: excerpt.id });
+              }
+            });
+          }
+
+          unwrapExistingUnderlines();
+
+          var initialInfo = documentTextInfo();
+          var rangesToApply = [];
+          excerpts.forEach(function(excerpt) {
+            if (!excerpt || !excerpt.text) {
+              return;
+            }
+
+            var rangeItem = rangeForExcerpt(excerpt, initialInfo);
+            if (rangeItem) {
+              rangesToApply.push(rangeItem);
+            }
+          });
+
+          nonOverlappingRanges(rangesToApply).forEach(function(item) {
+            var info = documentTextInfo();
+            var start = boundaryAt(info.ranges, item.start, false);
+            var end = boundaryAt(info.ranges, item.end, true);
             if (!start || !end) {
               return;
             }
@@ -1736,8 +1914,9 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
               range.setEnd(end.node, end.offset);
               var wrapper = document.createElement('span');
               wrapper.className = 'dufoj-excerpt-underline';
-              wrapper.setAttribute('data-dufoj-excerpt-id', String(excerpt.id));
+              wrapper.setAttribute('data-dufoj-excerpt-id', String(item.excerpt.id));
               wrapper.appendChild(range.extractContents());
+              attachExcerptTapHandler(wrapper, item.excerpt);
               range.insertNode(wrapper);
             } catch (e) {}
           });

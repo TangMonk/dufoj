@@ -419,6 +419,23 @@ class ExcerptTableViewController: UITableViewController {
         openEpubReader(book: book, targetExcerpt: excerpt)
     }
 
+    override func tableView(_ tableView: UITableView,
+                            commit editingStyle: UITableViewCell.EditingStyle,
+                            forRowAt indexPath: IndexPath) {
+        guard editingStyle == .delete else {
+            return
+        }
+
+        let excerpt = items[indexPath.row]
+        if DatabaseAccessor.deleteExcerpt(id: excerpt.id) {
+            items.remove(at: indexPath.row)
+            tableView.deleteRows(at: [indexPath], with: .automatic)
+            updateEmptyStateVisibility()
+        } else {
+            ShowMessage(controller: self, msg: "删除摘录失败", title: "错误")
+        }
+    }
+
     private func loadExcerpts() {
         items = DatabaseAccessor.getExcerpts()
         updateEmptyStateVisibility()
