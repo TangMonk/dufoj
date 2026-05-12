@@ -411,12 +411,43 @@ private final class EpubAISettingsViewController: UIViewController, UITextFieldD
         updateFontSizeLabel()
     }
 
+    private var isDarkModeEnabled: Bool {
+        if #available(iOS 13.0, *) {
+            return traitCollection.userInterfaceStyle == .dark
+        }
+        return false
+    }
+
+    private var cardBackgroundColor: UIColor {
+        return isDarkModeEnabled ? UIColor(red: 0.16, green: 0.16, blue: 0.17, alpha: 1) : UIColor(white: 0.98, alpha: 1)
+    }
+
+    private var primaryTextColor: UIColor {
+        return isDarkModeEnabled ? UIColor(white: 0.92, alpha: 1) : UIColor(white: 0.1, alpha: 1)
+    }
+
+    private var secondaryTextColor: UIColor {
+        return isDarkModeEnabled ? UIColor(white: 0.72, alpha: 1) : UIColor.darkGray
+    }
+
+    private var controlBackgroundColor: UIColor {
+        return isDarkModeEnabled ? UIColor(red: 0.10, green: 0.10, blue: 0.11, alpha: 1) : UIColor.white
+    }
+
+    private var controlBorderColor: UIColor {
+        return isDarkModeEnabled ? UIColor(red: 0.34, green: 0.34, blue: 0.36, alpha: 1) : UIColor(white: 0.82, alpha: 1)
+    }
+
+    private var actionColor: UIColor {
+        return isDarkModeEnabled ? UIColor(red: 0.42, green: 0.66, blue: 1.0, alpha: 1) : view.tintColor
+    }
+
     private func setupViews() {
-        view.backgroundColor = UIColor(white: 0, alpha: 0.45)
+        view.backgroundColor = UIColor(white: 0, alpha: isDarkModeEnabled ? 0.58 : 0.45)
 
         let cardView = UIView()
         cardView.translatesAutoresizingMaskIntoConstraints = false
-        cardView.backgroundColor = UIColor(white: 0.98, alpha: 1)
+        cardView.backgroundColor = cardBackgroundColor
         cardView.layer.cornerRadius = 10
         cardView.layer.masksToBounds = true
         view.addSubview(cardView)
@@ -425,9 +456,11 @@ private final class EpubAISettingsViewController: UIViewController, UITextFieldD
         titleLabel.text = "AI设置"
         titleLabel.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
         titleLabel.textAlignment = .center
+        titleLabel.textColor = primaryTextColor
 
         let closeButton = UIButton(type: .system)
         closeButton.setTitle("关闭", for: .normal)
+        closeButton.setTitleColor(actionColor, for: .normal)
         closeButton.addTarget(self, action: #selector(closeSettings), for: .touchUpInside)
 
         let headerView = UIView()
@@ -445,15 +478,38 @@ private final class EpubAISettingsViewController: UIViewController, UITextFieldD
         cardView.addSubview(stackView)
 
         apiKeyField.borderStyle = .roundedRect
-        apiKeyField.placeholder = "留空使用默认 DeepSeek API Key"
+        apiKeyField.attributedPlaceholder = NSAttributedString(string: "留空使用默认 DeepSeek API Key",
+                                                               attributes: [.foregroundColor: secondaryTextColor])
         apiKeyField.text = settings.apiKey
+        apiKeyField.textColor = primaryTextColor
+        apiKeyField.backgroundColor = controlBackgroundColor
+        apiKeyField.tintColor = actionColor
+        apiKeyField.layer.borderColor = controlBorderColor.cgColor
+        apiKeyField.layer.borderWidth = isDarkModeEnabled ? 1 : 0
+        apiKeyField.layer.cornerRadius = 5
         apiKeyField.clearButtonMode = .whileEditing
         apiKeyField.autocapitalizationType = .none
         apiKeyField.autocorrectionType = .no
         apiKeyField.isSecureTextEntry = true
         apiKeyField.delegate = self
+        apiKeyField.keyboardAppearance = isDarkModeEnabled ? .dark : .default
+        let apiKeyHelpButton = UIButton(type: .system)
+        apiKeyHelpButton.setTitle("❓", for: .normal)
+        apiKeyHelpButton.titleLabel?.font = UIFont.systemFont(ofSize: 17)
+        apiKeyHelpButton.setTitleColor(actionColor, for: .normal)
+        apiKeyHelpButton.frame = CGRect(x: 0, y: 0, width: 42, height: 32)
+        apiKeyHelpButton.accessibilityLabel = "如何获取 DeepSeek API Key"
+        apiKeyHelpButton.addTarget(self, action: #selector(showDeepSeekAPIKeyHelp), for: .touchUpInside)
+        apiKeyField.rightView = apiKeyHelpButton
+        apiKeyField.rightViewMode = .always
 
         modeControl.selectedSegmentIndex = settings.usesStreaming ? 0 : 1
+        modeControl.tintColor = actionColor
+        modeControl.setTitleTextAttributes([.foregroundColor: secondaryTextColor], for: .normal)
+        modeControl.setTitleTextAttributes([.foregroundColor: primaryTextColor], for: .selected)
+        if #available(iOS 13.0, *) {
+            modeControl.selectedSegmentTintColor = isDarkModeEnabled ? UIColor(red: 0.25, green: 0.36, blue: 0.52, alpha: 1) : UIColor(white: 0.90, alpha: 1)
+        }
 
         let fontRow = UIStackView()
         fontRow.axis = .horizontal
@@ -463,26 +519,31 @@ private final class EpubAISettingsViewController: UIViewController, UITextFieldD
         let decreaseButton = UIButton(type: .system)
         decreaseButton.setTitle("A-", for: .normal)
         decreaseButton.titleLabel?.font = UIFont.systemFont(ofSize: 17, weight: .semibold)
+        decreaseButton.setTitleColor(actionColor, for: .normal)
         decreaseButton.addTarget(self, action: #selector(decreaseFontSize), for: .touchUpInside)
 
         let increaseButton = UIButton(type: .system)
         increaseButton.setTitle("A+", for: .normal)
         increaseButton.titleLabel?.font = UIFont.systemFont(ofSize: 17, weight: .semibold)
+        increaseButton.setTitleColor(actionColor, for: .normal)
         increaseButton.addTarget(self, action: #selector(increaseFontSize), for: .touchUpInside)
 
         fontSizeLabel.textAlignment = .center
         fontSizeLabel.font = UIFont.systemFont(ofSize: 16)
+        fontSizeLabel.textColor = primaryTextColor
         fontSizeLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
         fontRow.addArrangedSubview(decreaseButton)
         fontRow.addArrangedSubview(fontSizeLabel)
         fontRow.addArrangedSubview(increaseButton)
 
         inlineButtonSwitch.isOn = settings.showsInlineButtons
+        inlineButtonSwitch.onTintColor = actionColor
         let inlineRow = makeSettingRow(title: "段落后显示AI按钮", control: inlineButtonSwitch)
 
         let saveButton = UIButton(type: .system)
         saveButton.setTitle("保存", for: .normal)
         saveButton.titleLabel?.font = UIFont.systemFont(ofSize: 17, weight: .semibold)
+        saveButton.setTitleColor(actionColor, for: .normal)
         saveButton.addTarget(self, action: #selector(saveSettings), for: .touchUpInside)
 
         stackView.addArrangedSubview(makeTitleValueView(title: "DeepSeek API Key", valueView: apiKeyField))
@@ -523,7 +584,7 @@ private final class EpubAISettingsViewController: UIViewController, UITextFieldD
         let titleLabel = UILabel()
         titleLabel.text = title
         titleLabel.font = UIFont.systemFont(ofSize: 14, weight: .medium)
-        titleLabel.textColor = UIColor.darkGray
+        titleLabel.textColor = secondaryTextColor
 
         stackView.addArrangedSubview(titleLabel)
         stackView.addArrangedSubview(valueView)
@@ -539,6 +600,7 @@ private final class EpubAISettingsViewController: UIViewController, UITextFieldD
         let titleLabel = UILabel()
         titleLabel.text = title
         titleLabel.font = UIFont.systemFont(ofSize: 16)
+        titleLabel.textColor = primaryTextColor
         titleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
         row.addArrangedSubview(titleLabel)
@@ -571,6 +633,20 @@ private final class EpubAISettingsViewController: UIViewController, UITextFieldD
         settings.save()
         onSave(settings)
         dismiss(animated: true, completion: nil)
+    }
+
+    @objc private func showDeepSeekAPIKeyHelp() {
+        let message = """
+        1. 打开 https://platform.deepseek.com/api_keys 并登录 DeepSeek 账号。
+        2. 进入 API Keys 页面，点击创建新的 API Key。
+        3. 复制生成的 sk-... 密钥，粘贴到这里后保存。
+        4. 如果调用失败，请检查 DeepSeek 账户余额或充值状态。
+        """
+        let alert = UIAlertController(title: "获取 DeepSeek API Key",
+                                      message: message,
+                                      preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "知道了", style: .default, handler: nil))
+        present(alert, animated: true, completion: nil)
     }
 
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
