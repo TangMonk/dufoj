@@ -1332,7 +1332,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
         textView.font = aiExplanationFont()
         cardView.addSubview(textView)
 
-        let loadingView = UIActivityIndicatorView(style: .gray)
+        let loadingView = UIActivityIndicatorView(style: isDarkModeEnabled ? .white : .gray)
         loadingView.translatesAutoresizingMaskIntoConstraints = false
         loadingView.startAnimating()
         textView.addSubview(loadingView)
