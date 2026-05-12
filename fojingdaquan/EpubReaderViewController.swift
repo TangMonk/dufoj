@@ -80,7 +80,6 @@ private struct EpubAISettings {
     private static let fontScaleKey = "dufoj.epubReader.ai.fontScale"
     private static let inlineButtonsKey = "dufoj.epubReader.ai.inlineButtons"
 
-    static let defaultAPIKey = "sk-efa5fbb8c7574ac8a56384c7452a9a24"
     static let minimumFontScale: CGFloat = 0.8
     static let maximumFontScale: CGFloat = 1.8
     static let fontScaleStep: CGFloat = 0.1
@@ -90,9 +89,9 @@ private struct EpubAISettings {
     var fontScale: CGFloat
     var showsInlineButtons: Bool
 
-    var effectiveAPIKey: String {
+    var customAPIKey: String? {
         let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmedKey.isEmpty ? EpubAISettings.defaultAPIKey : trimmedKey
+        return trimmedKey.isEmpty ? nil : trimmedKey
     }
 
     static func load() -> EpubAISettings {
@@ -120,6 +119,108 @@ private struct EpubAISettings {
     }
 }
 
+private enum DeepSeekAPIKeyProvider {
+    private static let defaultAPIKeyGistURL = "https://gist.githubusercontent.com/TangMonk/b57b7f84cea9e01ce8e69311b81adea5/raw/gistfile1.txt"
+    private static var cachedDefaultAPIKey: String?
+
+    @discardableResult
+    static func resolveAPIKey(from settings: EpubAISettings,
+                              completion: @escaping (Result<String, Error>) -> Void) -> URLSessionDataTask? {
+        if let customAPIKey = settings.customAPIKey {
+            DispatchQueue.main.async {
+                completion(.success(customAPIKey))
+            }
+            return nil
+        }
+
+        if let cachedDefaultAPIKey = cachedDefaultAPIKey {
+            DispatchQueue.main.async {
+                completion(.success(cachedDefaultAPIKey))
+            }
+            return nil
+        }
+
+        guard let url = URL(string: defaultAPIKeyGistURL) else {
+            DispatchQueue.main.async {
+                completion(.failure(DeepSeekExplanationError.invalidURL))
+            }
+            return nil
+        }
+
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.timeoutInterval = 12
+
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
+            let result: Result<String, Error>
+
+            if let error = error as NSError? {
+                if error.code == NSURLErrorCancelled {
+                    result = .failure(DeepSeekExplanationError.cancelled)
+                } else {
+                    result = .failure(DeepSeekExplanationError.requestFailed(error.localizedDescription))
+                }
+            } else if let httpResponse = response as? HTTPURLResponse,
+                      !(200...299).contains(httpResponse.statusCode) {
+                let message = HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode)
+                result = .failure(DeepSeekExplanationError.requestFailed(message))
+            } else if let data = data,
+                      let apiKey = extractAPIKey(from: data) {
+                result = .success(apiKey)
+            } else {
+                result = .failure(DeepSeekExplanationError.apiKeyUnavailable)
+            }
+
+            DispatchQueue.main.async {
+                if case .success(let apiKey) = result {
+                    cachedDefaultAPIKey = apiKey
+                }
+                completion(result)
+            }
+        }
+
+        task.resume()
+        return task
+    }
+
+    private static func extractAPIKey(from data: Data) -> String? {
+        if let object = try? JSONSerialization.jsonObject(with: data),
+           let dictionary = object as? [String: Any] {
+            let keys = ["deepseek_api_key", "DEEPSEEK_API_KEY", "deepSeekAPIKey", "apiKey", "api_key", "key"]
+            for key in keys {
+                if let value = dictionary[key] as? String,
+                   let apiKey = normalizedAPIKey(from: value) {
+                    return apiKey
+                }
+            }
+        }
+
+        guard let string = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        return normalizedAPIKey(from: string)
+    }
+
+    private static func normalizedAPIKey(from value: String) -> String? {
+        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedValue.isEmpty else {
+            return nil
+        }
+
+        let pattern = "sk-[A-Za-z0-9_-]+"
+        if let regex = try? NSRegularExpression(pattern: pattern),
+           let match = regex.firstMatch(in: trimmedValue, range: NSRange(trimmedValue.startIndex..., in: trimmedValue)),
+           let range = Range(match.range, in: trimmedValue) {
+            return String(trimmedValue[range])
+        }
+
+        guard trimmedValue.rangeOfCharacter(from: .whitespacesAndNewlines) == nil else {
+            return nil
+        }
+        return trimmedValue
+    }
+}
+
 private enum EpubReaderError: Error {
     case unzipFailed
     case missingContainer
@@ -133,6 +234,7 @@ private enum DeepSeekExplanationError: LocalizedError {
     case requestFailed(String)
     case emptyResponse
     case cancelled
+    case apiKeyUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -146,6 +248,8 @@ private enum DeepSeekExplanationError: LocalizedError {
             return "AI 服务没有返回解释内容"
         case .cancelled:
             return "已取消"
+        case .apiKeyUnavailable:
+            return "无法获取默认 DeepSeek API Key，请稍后重试或在设置中手动填写"
         }
     }
 }
@@ -341,7 +445,7 @@ private final class EpubAISettingsViewController: UIViewController, UITextFieldD
         cardView.addSubview(stackView)
 
         apiKeyField.borderStyle = .roundedRect
-        apiKeyField.placeholder = "DeepSeek API Key"
+        apiKeyField.placeholder = "留空使用默认 DeepSeek API Key"
         apiKeyField.text = settings.apiKey
         apiKeyField.clearButtonMode = .whileEditing
         apiKeyField.autocapitalizationType = .none
@@ -1128,27 +1232,49 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
         showAIExplanationPopup()
 
         let settings = EpubAISettings.load()
+        activeAIExplanationTask = DeepSeekAPIKeyProvider.resolveAPIKey(from: settings) { [weak self] result in
+            guard let self = self else { return }
+            self.activeAIExplanationTask = nil
+            guard self.aiExplanationOverlayView != nil else {
+                return
+            }
+
+            switch result {
+            case .success(let apiKey):
+                self.startAIExplanationRequest(for: selectedText, apiKey: apiKey, settings: settings)
+            case .failure(let error):
+                if let deepSeekError = error as? DeepSeekExplanationError,
+                   case .cancelled = deepSeekError {
+                    return
+                }
+                self.showAIExplanationError(error)
+            }
+        }
+    }
+
+    private func startAIExplanationRequest(for selectedText: String, apiKey: String, settings: EpubAISettings) {
         if settings.usesStreaming {
             requestAIExplanationStream(for: selectedText,
-                                       apiKey: settings.effectiveAPIKey,
+                                       apiKey: apiKey,
                                        onText: { [weak self] text in
                                            self?.enqueueAIExplanationText(text)
                                        },
                                        completion: { [weak self] result in
                                            self?.finishAIExplanationRequest(with: result)
                                        })
-        } else {
-            requestAIExplanation(for: selectedText, apiKey: settings.effectiveAPIKey) { [weak self] result in
-                guard let self = self else { return }
-                switch result {
-                case .success(let explanation):
-                    self.stopAIExplanationLoading()
-                    self.aiExplanationDisplayedText = explanation
-                    self.updateAIExplanationTextView()
-                    self.finishAIExplanationIfReady()
-                case .failure(let error):
-                    self.showAIExplanationError(error)
-                }
+            return
+        }
+
+        requestAIExplanation(for: selectedText, apiKey: apiKey) { [weak self] result in
+            guard let self = self else { return }
+            switch result {
+            case .success(let explanation):
+                self.stopAIExplanationLoading()
+                self.aiExplanationDisplayedText = explanation
+                self.updateAIExplanationTextView()
+                self.finishAIExplanationIfReady()
+            case .failure(let error):
+                self.showAIExplanationError(error)
             }
         }
     }
