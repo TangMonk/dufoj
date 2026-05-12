@@ -120,7 +120,7 @@ private struct EpubAISettings {
 }
 
 private enum DeepSeekAPIKeyProvider {
-    private static let defaultAPIKeyGistURL = "https://gist.githubusercontent.com/TangMonk/b57b7f84cea9e01ce8e69311b81adea5/raw/gistfile1.txt"
+    private static let defaultAPIKeyURL = "https://davidwu.oss-cn-hangzhou.aliyuncs.com/deepseek.txt"
     private static var cachedDefaultAPIKey: String?
 
     @discardableResult
@@ -140,7 +140,7 @@ private enum DeepSeekAPIKeyProvider {
             return nil
         }
 
-        guard let url = URL(string: defaultAPIKeyGistURL) else {
+        guard let url = URL(string: defaultAPIKeyURL) else {
             DispatchQueue.main.async {
                 completion(.failure(DeepSeekExplanationError.invalidURL))
             }
