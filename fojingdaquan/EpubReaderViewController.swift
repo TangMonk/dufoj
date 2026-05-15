@@ -560,6 +560,12 @@ private final class EpubAISettingsViewController: UIViewController, UITextFieldD
         if #available(iOS 13.0, *) {
             modelModeControl.selectedSegmentTintColor = isDarkModeEnabled ? UIColor(red: 0.25, green: 0.36, blue: 0.52, alpha: 1) : UIColor(white: 0.90, alpha: 1)
         }
+        let modelModeHelpButton = UIButton(type: .system)
+        modelModeHelpButton.setTitle("❓", for: .normal)
+        modelModeHelpButton.titleLabel?.font = UIFont.systemFont(ofSize: 15)
+        modelModeHelpButton.setTitleColor(actionColor, for: .normal)
+        modelModeHelpButton.accessibilityLabel = "响应速度说明"
+        modelModeHelpButton.addTarget(self, action: #selector(showAIModelModeHelp), for: .touchUpInside)
 
         let fontRow = UIStackView()
         fontRow.axis = .horizontal
@@ -598,7 +604,7 @@ private final class EpubAISettingsViewController: UIViewController, UITextFieldD
 
         stackView.addArrangedSubview(makeTitleValueView(title: "DeepSeek API Key", valueView: apiKeyField))
         stackView.addArrangedSubview(makeTitleValueView(title: "吐字方式", valueView: modeControl))
-        stackView.addArrangedSubview(makeTitleValueView(title: "响应速度", valueView: modelModeControl))
+        stackView.addArrangedSubview(makeTitleValueView(title: "响应速度", valueView: modelModeControl, titleAccessory: modelModeHelpButton))
         stackView.addArrangedSubview(makeTitleValueView(title: "AI解释字体", valueView: fontRow))
         stackView.addArrangedSubview(inlineRow)
         stackView.addArrangedSubview(saveButton)
@@ -627,17 +633,28 @@ private final class EpubAISettingsViewController: UIViewController, UITextFieldD
         ])
     }
 
-    private func makeTitleValueView(title: String, valueView: UIView) -> UIView {
+    private func makeTitleValueView(title: String, valueView: UIView, titleAccessory: UIView? = nil) -> UIView {
         let stackView = UIStackView()
         stackView.axis = .vertical
         stackView.spacing = 6
+
+        let titleRow = UIStackView()
+        titleRow.axis = .horizontal
+        titleRow.alignment = .center
+        titleRow.spacing = 6
 
         let titleLabel = UILabel()
         titleLabel.text = title
         titleLabel.font = UIFont.systemFont(ofSize: 14, weight: .medium)
         titleLabel.textColor = secondaryTextColor
 
-        stackView.addArrangedSubview(titleLabel)
+        titleRow.addArrangedSubview(titleLabel)
+        if let titleAccessory = titleAccessory {
+            titleRow.addArrangedSubview(titleAccessory)
+        }
+        titleRow.addArrangedSubview(UIView())
+
+        stackView.addArrangedSubview(titleRow)
         stackView.addArrangedSubview(valueView)
         return stackView
     }
@@ -690,6 +707,14 @@ private final class EpubAISettingsViewController: UIViewController, UITextFieldD
     @objc private func showDeepSeekAPIKeyHelp() {
         let helpController = EpubDeepSeekAPIKeyHelpViewController()
         present(helpController, animated: true, completion: nil)
+    }
+
+    @objc private func showAIModelModeHelp() {
+        let alertController = UIAlertController(title: "响应速度说明",
+                                                message: "快速模式翻译速度更快，但是不够精准。\n慢速模式速度较慢，但是翻译更准确。",
+                                                preferredStyle: .alert)
+        alertController.addAction(UIAlertAction(title: "知道了", style: .default, handler: nil))
+        present(alertController, animated: true, completion: nil)
     }
 
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
