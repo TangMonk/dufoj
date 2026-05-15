@@ -636,22 +636,146 @@ private final class EpubAISettingsViewController: UIViewController, UITextFieldD
     }
 
     @objc private func showDeepSeekAPIKeyHelp() {
-        let message = """
-        1. 打开 https://platform.deepseek.com/api_keys 并登录 DeepSeek 账号。
-        2. 进入 API Keys 页面，点击创建新的 API Key。
-        3. 复制生成的 sk-... 密钥，粘贴到这里后保存。
-        4. 如果调用失败，请检查 DeepSeek 账户余额或充值状态。
-        """
-        let alert = UIAlertController(title: "获取 DeepSeek API Key",
-                                      message: message,
-                                      preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "知道了", style: .default, handler: nil))
-        present(alert, animated: true, completion: nil)
+        let helpController = EpubDeepSeekAPIKeyHelpViewController()
+        present(helpController, animated: true, completion: nil)
     }
 
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         textField.resignFirstResponder()
         return true
+    }
+}
+
+private final class EpubDeepSeekAPIKeyHelpViewController: UIViewController {
+    private let apiKeyURLString = "https://platform.deepseek.com/api_keys"
+
+    init() {
+        super.init(nibName: nil, bundle: nil)
+        modalPresentationStyle = .overFullScreen
+        modalTransitionStyle = .crossDissolve
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        setupViews()
+    }
+
+    private var isDarkModeEnabled: Bool {
+        if #available(iOS 13.0, *) {
+            return traitCollection.userInterfaceStyle == .dark
+        }
+        return false
+    }
+
+    private var cardBackgroundColor: UIColor {
+        return isDarkModeEnabled ? UIColor(red: 0.16, green: 0.16, blue: 0.17, alpha: 1) : UIColor(white: 0.98, alpha: 1)
+    }
+
+    private var primaryTextColor: UIColor {
+        return isDarkModeEnabled ? UIColor(white: 0.92, alpha: 1) : UIColor(white: 0.1, alpha: 1)
+    }
+
+    private var actionColor: UIColor {
+        return isDarkModeEnabled ? UIColor(red: 0.42, green: 0.66, blue: 1.0, alpha: 1) : view.tintColor
+    }
+
+    private func setupViews() {
+        view.backgroundColor = UIColor(white: 0, alpha: isDarkModeEnabled ? 0.58 : 0.45)
+
+        let cardView = UIView()
+        cardView.translatesAutoresizingMaskIntoConstraints = false
+        cardView.backgroundColor = cardBackgroundColor
+        cardView.layer.cornerRadius = 10
+        cardView.layer.masksToBounds = true
+        view.addSubview(cardView)
+
+        let titleLabel = UILabel()
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.text = "获取 DeepSeek API Key"
+        titleLabel.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
+        titleLabel.textAlignment = .center
+        titleLabel.textColor = primaryTextColor
+
+        let closeButton = UIButton(type: .system)
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        closeButton.setTitle("知道了", for: .normal)
+        closeButton.titleLabel?.font = UIFont.systemFont(ofSize: 17)
+        closeButton.setTitleColor(actionColor, for: .normal)
+        closeButton.addTarget(self, action: #selector(closeHelp), for: .touchUpInside)
+
+        let textView = UITextView()
+        textView.translatesAutoresizingMaskIntoConstraints = false
+        textView.attributedText = helpAttributedText()
+        textView.backgroundColor = .clear
+        textView.isEditable = false
+        textView.isScrollEnabled = false
+        textView.isSelectable = true
+        textView.dataDetectorTypes = [.link]
+        textView.textContainerInset = .zero
+        textView.textContainer.lineFragmentPadding = 0
+        textView.linkTextAttributes = [
+            .foregroundColor: actionColor,
+            .underlineStyle: NSUnderlineStyle.single.rawValue
+        ]
+
+        cardView.addSubview(titleLabel)
+        cardView.addSubview(textView)
+        cardView.addSubview(closeButton)
+
+        NSLayoutConstraint.activate([
+            cardView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            cardView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            cardView.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 22),
+            cardView.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -22),
+            cardView.widthAnchor.constraint(lessThanOrEqualToConstant: 390),
+
+            titleLabel.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 18),
+            titleLabel.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 18),
+            titleLabel.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -18),
+
+            textView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 16),
+            textView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 20),
+            textView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -20),
+
+            closeButton.topAnchor.constraint(equalTo: textView.bottomAnchor, constant: 16),
+            closeButton.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 18),
+            closeButton.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -18),
+            closeButton.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -16),
+            closeButton.heightAnchor.constraint(equalToConstant: 36)
+        ])
+    }
+
+    private func helpAttributedText() -> NSAttributedString {
+        let message = """
+        1. 打开 \(apiKeyURLString) 并登录 DeepSeek 账号。
+        2. 进入 API Keys 页面，点击创建新的 API Key。
+        3. 复制生成的 sk-... 密钥，粘贴到这里后保存。
+        4. 如果调用失败，请检查 DeepSeek 账户余额或充值状态。
+        """
+        let attributedText = NSMutableAttributedString(
+            string: message,
+            attributes: [
+                .font: UIFont.systemFont(ofSize: 16),
+                .foregroundColor: primaryTextColor
+            ]
+        )
+        let urlRange = (message as NSString).range(of: apiKeyURLString)
+        if let url = URL(string: apiKeyURLString), urlRange.location != NSNotFound {
+            attributedText.addAttributes([
+                .link: url,
+                .foregroundColor: actionColor,
+                .underlineStyle: NSUnderlineStyle.single.rawValue
+            ], range: urlRange)
+        }
+        return attributedText
+    }
+
+    @objc private func closeHelp() {
+        dismiss(animated: true, completion: nil)
     }
 }
 
