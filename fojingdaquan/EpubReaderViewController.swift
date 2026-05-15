@@ -74,9 +74,46 @@ private struct DeepSeekChatStreamResponse: Codable {
     let error: DeepSeekChatResponse.APIError?
 }
 
+private enum EpubAIModelMode: String, CaseIterable {
+    case fast
+    case slow
+
+    static let defaultMode: EpubAIModelMode = .slow
+
+    var title: String {
+        switch self {
+        case .fast:
+            return "快速"
+        case .slow:
+            return "慢速"
+        }
+    }
+
+    var deepSeekModel: String {
+        switch self {
+        case .fast:
+            return "deepseek-v4-flash"
+        case .slow:
+            return "deepseek-v4-pro"
+        }
+    }
+
+    var segmentIndex: Int {
+        return EpubAIModelMode.allCases.firstIndex(of: self) ?? 0
+    }
+
+    static func mode(forSegmentIndex index: Int) -> EpubAIModelMode {
+        guard allCases.indices.contains(index) else {
+            return defaultMode
+        }
+        return allCases[index]
+    }
+}
+
 private struct EpubAISettings {
     private static let apiKeyKey = "dufoj.epubReader.ai.deepSeekAPIKey"
     private static let streamingKey = "dufoj.epubReader.ai.streaming"
+    private static let modelModeKey = "dufoj.epubReader.ai.modelMode"
     private static let fontScaleKey = "dufoj.epubReader.ai.fontScale"
     private static let inlineButtonsKey = "dufoj.epubReader.ai.inlineButtons"
 
@@ -86,6 +123,7 @@ private struct EpubAISettings {
 
     var apiKey: String
     var usesStreaming: Bool
+    var modelMode: EpubAIModelMode
     var fontScale: CGFloat
     var showsInlineButtons: Bool
 
@@ -99,9 +137,11 @@ private struct EpubAISettings {
         let storedScale = defaults.object(forKey: fontScaleKey) as? Double
         let storedStreaming = defaults.object(forKey: streamingKey) as? Bool
         let storedInlineButtons = defaults.object(forKey: inlineButtonsKey) as? Bool
+        let storedModelMode = defaults.string(forKey: modelModeKey).flatMap(EpubAIModelMode.init(rawValue:))
 
         return EpubAISettings(apiKey: defaults.string(forKey: apiKeyKey) ?? "",
                               usesStreaming: storedStreaming ?? true,
+                              modelMode: storedModelMode ?? EpubAIModelMode.defaultMode,
                               fontScale: clampedFontScale(CGFloat(storedScale ?? 1.0)),
                               showsInlineButtons: storedInlineButtons ?? false)
     }
@@ -110,6 +150,7 @@ private struct EpubAISettings {
         let defaults = UserDefaults.standard
         defaults.set(apiKey.trimmingCharacters(in: .whitespacesAndNewlines), forKey: EpubAISettings.apiKeyKey)
         defaults.set(usesStreaming, forKey: EpubAISettings.streamingKey)
+        defaults.set(modelMode.rawValue, forKey: EpubAISettings.modelModeKey)
         defaults.set(Double(EpubAISettings.clampedFontScale(fontScale)), forKey: EpubAISettings.fontScaleKey)
         defaults.set(showsInlineButtons, forKey: EpubAISettings.inlineButtonsKey)
     }
@@ -390,6 +431,7 @@ private final class EpubAISettingsViewController: UIViewController, UITextFieldD
     private let onSave: (EpubAISettings) -> Void
     private let apiKeyField = UITextField()
     private let modeControl = UISegmentedControl(items: ["流式", "普通"])
+    private let modelModeControl = UISegmentedControl(items: EpubAIModelMode.allCases.map { $0.title })
     private let fontSizeLabel = UILabel()
     private let inlineButtonSwitch = UISwitch()
 
@@ -511,6 +553,14 @@ private final class EpubAISettingsViewController: UIViewController, UITextFieldD
             modeControl.selectedSegmentTintColor = isDarkModeEnabled ? UIColor(red: 0.25, green: 0.36, blue: 0.52, alpha: 1) : UIColor(white: 0.90, alpha: 1)
         }
 
+        modelModeControl.selectedSegmentIndex = settings.modelMode.segmentIndex
+        modelModeControl.tintColor = actionColor
+        modelModeControl.setTitleTextAttributes([.foregroundColor: secondaryTextColor], for: .normal)
+        modelModeControl.setTitleTextAttributes([.foregroundColor: primaryTextColor], for: .selected)
+        if #available(iOS 13.0, *) {
+            modelModeControl.selectedSegmentTintColor = isDarkModeEnabled ? UIColor(red: 0.25, green: 0.36, blue: 0.52, alpha: 1) : UIColor(white: 0.90, alpha: 1)
+        }
+
         let fontRow = UIStackView()
         fontRow.axis = .horizontal
         fontRow.alignment = .center
@@ -548,6 +598,7 @@ private final class EpubAISettingsViewController: UIViewController, UITextFieldD
 
         stackView.addArrangedSubview(makeTitleValueView(title: "DeepSeek API Key", valueView: apiKeyField))
         stackView.addArrangedSubview(makeTitleValueView(title: "吐字方式", valueView: modeControl))
+        stackView.addArrangedSubview(makeTitleValueView(title: "响应速度", valueView: modelModeControl))
         stackView.addArrangedSubview(makeTitleValueView(title: "AI解释字体", valueView: fontRow))
         stackView.addArrangedSubview(inlineRow)
         stackView.addArrangedSubview(saveButton)
@@ -629,6 +680,7 @@ private final class EpubAISettingsViewController: UIViewController, UITextFieldD
     @objc private func saveSettings() {
         settings.apiKey = apiKeyField.text ?? ""
         settings.usesStreaming = modeControl.selectedSegmentIndex == 0
+        settings.modelMode = EpubAIModelMode.mode(forSegmentIndex: modelModeControl.selectedSegmentIndex)
         settings.showsInlineButtons = inlineButtonSwitch.isOn
         settings.save()
         onSave(settings)
@@ -785,7 +837,6 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
     private static let minimumFontScale: CGFloat = 0.5
     private static let maximumFontScale: CGFloat = 6.0
     private static let deepSeekAPIURL = "https://api.deepseek.com/chat/completions"
-    private static let deepSeekModel = "deepseek-v4-pro"
     private static let deepSeekSystemPrompt = "你是一个专业的佛经翻译人员，把文言文佛经翻译成白话文，采用直译为主、文白相间的风格, 既保持经典庄严感又确保现代人能理解。直接输出译文，不要解释过程。"
 
     private let epubURL: URL
@@ -1460,6 +1511,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
         if settings.usesStreaming {
             requestAIExplanationStream(for: selectedText,
                                        apiKey: apiKey,
+                                       modelMode: settings.modelMode,
                                        onText: { [weak self] text in
                                            self?.enqueueAIExplanationText(text)
                                        },
@@ -1469,7 +1521,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
             return
         }
 
-        requestAIExplanation(for: selectedText, apiKey: apiKey) { [weak self] result in
+        requestAIExplanation(for: selectedText, apiKey: apiKey, modelMode: settings.modelMode) { [weak self] result in
             guard let self = self else { return }
             switch result {
             case .success(let explanation):
@@ -1743,9 +1795,10 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
 
     private func requestAIExplanationStream(for selectedText: String,
                                             apiKey: String,
+                                            modelMode: EpubAIModelMode,
                                             onText: @escaping (String) -> Void,
                                             completion: @escaping (Result<Void, Error>) -> Void) {
-        guard let request = makeAIExplanationRequest(selectedText: selectedText, apiKey: apiKey, stream: true) else {
+        guard let request = makeAIExplanationRequest(selectedText: selectedText, apiKey: apiKey, modelMode: modelMode, stream: true) else {
             completion(.failure(DeepSeekExplanationError.invalidResponse))
             return
         }
@@ -1762,8 +1815,9 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
 
     private func requestAIExplanation(for selectedText: String,
                                       apiKey: String,
+                                      modelMode: EpubAIModelMode,
                                       completion: @escaping (Result<String, Error>) -> Void) {
-        guard let request = makeAIExplanationRequest(selectedText: selectedText, apiKey: apiKey, stream: false) else {
+        guard let request = makeAIExplanationRequest(selectedText: selectedText, apiKey: apiKey, modelMode: modelMode, stream: false) else {
             completion(.failure(DeepSeekExplanationError.invalidResponse))
             return
         }
@@ -1811,7 +1865,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
         task.resume()
     }
 
-    private func makeAIExplanationRequest(selectedText: String, apiKey: String, stream: Bool) -> URLRequest? {
+    private func makeAIExplanationRequest(selectedText: String, apiKey: String, modelMode: EpubAIModelMode, stream: Bool) -> URLRequest? {
         guard let url = URL(string: EpubReaderViewController.deepSeekAPIURL) else {
             return nil
         }
@@ -1821,7 +1875,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
-        let body = DeepSeekChatRequest(model: EpubReaderViewController.deepSeekModel,
+        let body = DeepSeekChatRequest(model: modelMode.deepSeekModel,
                                        messages: [
                                            DeepSeekChatMessage(role: "system", content: EpubReaderViewController.deepSeekSystemPrompt),
                                            DeepSeekChatMessage(role: "user", content: "翻译：\(selectedText)")
