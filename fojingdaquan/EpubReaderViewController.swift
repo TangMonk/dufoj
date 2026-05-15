@@ -677,6 +677,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
 
     private var book: EpubBook?
     private var currentChapterIndex = 0
+    private var currentTocURL: URL?
     private var fontScale: CGFloat = EpubReaderViewController.defaultFontScale
     private var pendingScrollY: Double?
     private var pendingScrollToExcerptID: Int64?
@@ -895,6 +896,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
         let chapter = book.chapters[currentChapterIndex]
         progressLabel.text = "\(currentChapterIndex + 1)/\(book.chapters.count)"
         pendingScrollY = scrollY
+        currentTocURL = targetURL
         installReaderStyleUserScript()
         webView.loadFileURL(targetURL ?? chapter.url, allowingReadAccessTo: book.rootURL)
     }
@@ -2242,7 +2244,9 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
     @objc private func showContents() {
         guard let book = book else { return }
 
-        let contents = EpubContentsViewController(items: book.tocItems, currentIndex: currentChapterIndex) { [weak self] item in
+        let contents = EpubContentsViewController(items: book.tocItems,
+                                                  currentIndex: currentChapterIndex,
+                                                  currentURL: currentTocURL) { [weak self] item in
             self?.saveCurrentPosition()
             self?.currentChapterIndex = item.chapterIndex ?? 0
             self?.loadCurrentChapter(scrollY: item.url?.fragment == nil ? 0 : nil, targetURL: item.url)
@@ -2275,7 +2279,7 @@ final class EpubReaderViewController: UIViewController, WKNavigationDelegate, WK
 
         saveCurrentPosition()
         currentChapterIndex = index
-        loadCurrentChapter(scrollY: 0)
+        loadCurrentChapter(scrollY: url.fragment == nil ? 0 : nil, targetURL: url)
         decisionHandler(.cancel)
     }
 
@@ -2401,11 +2405,13 @@ private final class EpubContentsViewController: UITableViewController {
     private let checkedRowIndex: Int?
     private let onSelect: (EpubTocItem) -> Void
 
-    init(items: [EpubTocItem], currentIndex: Int, onSelect: @escaping (EpubTocItem) -> Void) {
+    init(items: [EpubTocItem], currentIndex: Int, currentURL: URL?, onSelect: @escaping (EpubTocItem) -> Void) {
         let rows = EpubContentsViewController.flatten(items: items)
         self.rows = rows
         self.currentIndex = currentIndex
-        self.checkedRowIndex = rows.firstIndex { $0.item.chapterIndex == currentIndex }
+        self.checkedRowIndex = EpubContentsViewController.checkedRowIndex(in: rows,
+                                                                          currentIndex: currentIndex,
+                                                                          currentURL: currentURL)
         self.onSelect = onSelect
         super.init(style: .plain)
         title = "目录"
@@ -2491,6 +2497,26 @@ private final class EpubContentsViewController: UITableViewController {
         return items.flatMap { item -> [Row] in
             return [Row(item: item, level: level)] + flatten(items: item.children, level: level + 1)
         }
+    }
+
+    private static func checkedRowIndex(in rows: [Row], currentIndex: Int, currentURL: URL?) -> Int? {
+        if let currentURL = currentURL {
+            let normalizedCurrentURL = normalizedTocURL(currentURL)
+            if let urlIndex = rows.firstIndex(where: { row in
+                guard let url = row.item.url else {
+                    return false
+                }
+                return normalizedTocURL(url) == normalizedCurrentURL
+            }) {
+                return urlIndex
+            }
+        }
+
+        return rows.firstIndex { $0.item.chapterIndex == currentIndex }
+    }
+
+    private static func normalizedTocURL(_ url: URL) -> URL {
+        return (URLComponents(url: url, resolvingAgainstBaseURL: true)?.url ?? url).standardizedFileURL
     }
 }
 
