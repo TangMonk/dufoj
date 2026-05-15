@@ -2398,11 +2398,14 @@ private final class EpubContentsViewController: UITableViewController {
 
     private let rows: [Row]
     private let currentIndex: Int
+    private let checkedRowIndex: Int?
     private let onSelect: (EpubTocItem) -> Void
 
     init(items: [EpubTocItem], currentIndex: Int, onSelect: @escaping (EpubTocItem) -> Void) {
-        self.rows = EpubContentsViewController.flatten(items: items)
+        let rows = EpubContentsViewController.flatten(items: items)
+        self.rows = rows
         self.currentIndex = currentIndex
+        self.checkedRowIndex = rows.firstIndex { $0.item.chapterIndex == currentIndex }
         self.onSelect = onSelect
         super.init(style: .plain)
         title = "目录"
@@ -2446,7 +2449,7 @@ private final class EpubContentsViewController: UITableViewController {
         cell.indentationLevel = row.level
         cell.indentationWidth = 18
         cell.selectionStyle = isSelectable ? .default : .none
-        cell.accessoryType = row.item.chapterIndex == currentIndex ? .checkmark : .none
+        cell.accessoryType = indexPath.row == checkedRowIndex ? .checkmark : .none
         return cell
     }
 
